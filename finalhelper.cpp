@@ -24,16 +24,7 @@ REQUIRED INSTRUCTIONS TO DISSASSEMBLE
     *BRA, JSR, RTS		
 
 
-*ADD, *ADDA
-*BCLR
-*BRA,
 *Bcc (BCS, BGE, BLT, BVC)
-ASL
-ASR,
-CMP,
-CMPI
-DIVS
-EOR
 JSR,
 LEA
 LSL
@@ -241,13 +232,47 @@ Absolute Data Addressing
 	
 	
 	
-									ASL, ASR
-									MEMORY Shifts
-15 14 13 12 11 10 9 	8 	7 6		 5 4 3 		2 1 0 
-1  1  1  0  0  0  0 	dr 	1 1
-EFFECTIVE ADDRESS MODE REGISTER
+									ASL, ASR pg. 125
+                                    Register Shifts
+15 14 13 12 11 10 9             8       7 6         5       4 3     2 1 0 
+1  1  1  0  COUNT? REGISTER     dr      SIZE        i/r     0 0     REGISTER 
 
-									Bcc
+    Count/Register ﬁeld—Speciﬁes shift count or register that contains the shift count:
+        If i/r = 0, this ﬁeld contains the shift count.  The values 1 – 7 represent counts
+            of 1 – 7; a value of zero represents a count of eight.
+        If i/r = 1, this ﬁeld speciﬁes the data register that contains the shift count (modulo 64)
+    dr ﬁeld—Speciﬁes the direction of the shift.
+        0 — Shift right
+        1 — Shift left 
+    Size ﬁeld—Speciﬁes the size of the operation.
+        00 — Byte operation 
+        01 — Word operation 
+        10 — Long operation
+    i/r ﬁeld 
+        If i/r = 0, speciﬁes immediate shift count. 
+        If i/r = 1, speciﬁes register shift count. 
+    Register ﬁeld—Speciﬁes a data register to be shifted. 
+ 
+									Memory Shifts
+15 14 13 12 11 10 9 	8 	7 6		5 4 3 		2 1 0 
+1  1  1  0  0  0  0 	dr 	1 1     EA Mode     EA register
+    
+    dr ﬁeld—Speciﬁes the direction of the shift.
+        0 — Shift right
+        1 — Shift left 
+        
+    EA			Mode	Register			
+	(An) 		010		reg. number: An
+	(An)+ 		011		reg. number: An
+	-(An) 		100		reg. number: An
+	(d16,An)	101		reg. number: An  <-- address with displacement
+	(d8,An,xn)	110		reg. number: An	 <-- 8 bit displacement
+	(xxx).W		111		000
+	(xxx).L		111		001
+    
+
+
+									Bcc pg. 130
 15 14 13 12 		11 10 9 8 		7 6 5 4 3 2 1 0
 0  1  1  0 			CONDITION 		8-BIT DISPLACEMENT
 	16-BIT DISPLACEMENT IF 8-BIT DISPLACEMENT = $00
@@ -263,7 +288,7 @@ EFFECTIVE ADDRESS MODE REGISTER
 
 		
 
-									BCLR
+									BCLR pg. 134
 15 14 13 12 11 10 9 8 7 6 	5 4 3 		2 1 0 
 0  0  0  0  1  0  0 0 1 0	EA MODE		EA REGISTER
 0  0  0  0  0  0  0 0 <----- BIT NUMBER ----->
@@ -280,7 +305,7 @@ EFFECTIVE ADDRESS MODE REGISTER
 	
 	
 	
-									BRA
+									BRA pg. 159
 15 14 13 12 11 10 9 8 	7 6 5 4 3 2 1 0
 0  1  1  0  0  0  0 0 	8-BIT DISPLACEMENT
 	16-BIT DISPLACEMENT IF 8-BIT DISPLACEMENT = $00
@@ -295,5 +320,126 @@ EFFECTIVE ADDRESS MODE REGISTER
 		
 
 		
+                                   CMP pg. 179
+15 14 13 12     11 10 9     8 7 6       5 4 3       2 1 0 
+1  0  1  1      REGISTER    OPMODE      EA MODE     EA REGISTER
 
+    Register ﬁeld—Speciﬁes the destination data register. 
+    Opmode ﬁeld 
+        Byte    Word    Long    Operation
+        000     001     010     Dn – < ea > 
+    
+    EA			Mode	Register
+	Dn			000		reg. number:Dn			
+	An*			001		reg. number:An			
+	(An) 		010		reg. number: An
+	(An)+ 		011		reg. number: An
+	-(An) 		100		reg. number: An
+	(d16,An)	101		reg. number: An  <-- address with displacement
+	(d8,An,xn)	110		reg. number: An	 <-- 8 bit displacement
+	(xxx).W		111		000
+	(xxx).L		111		001
+	#<data>		111		100		
+    
+    
+    
+    
+                                CMPI pg. 183
+                            CMPI # < data > , < ea >
+15 14 13 12 11 10 9 8       7 6     5 4 3       2 1 0 
+0  0  0  0  1  1  0 0       SIZE    EA MODE     EA REGISTER
+<- 16-BIT WORD DATA ->      <--- 8-BIT BYTE DATA --->
+<------------------ 32-BIT LONG DATA --------------->
+
+    Size ﬁeld—Speciﬁes the size of the operation. 
+        00 — Byte operation 
+        01 — Word operation 
+        10 — Long operation 
+
+    EA			Mode	Register
+	Dn			000		reg. number:Dn					
+	(An) 		010		reg. number: An
+	(An)+ 		011		reg. number: An
+	-(An) 		100		reg. number: An
+	(d16,An)	101		reg. number: An  <-- address with displacement
+	(d8,An,xn)	110		reg. number: An	 <-- 8 bit displacement
+	(xxx).W		111		000
+	(xxx).L		111		001
+    
+    
+    
+
+
+                               DIVS pg.196                          <------ check things before this for condition codes, pg number, isntruction fields stuff, etc
+                    DIVS.W < ea > ,Dn32/16 → 16r – 16q 
+                    WORD OPERATION
+15 14 13 12     11 10 9     8 7 6   5 4 3       2 1 0 
+1  0  0  0      REGISTER    1 1 1   EA MODE     EA REGISTER
+
+    Register ﬁeld—Speciﬁes any of the eight data registers. 
+        This ﬁeld always speciﬁes the destination operand. 
+    Effective Address ﬁeld—Speciﬁes the source operand
+    
+    EA			Mode	Register
+	Dn			000		reg. number:Dn					
+	(An) 		010		reg. number: An
+	(An)+ 		011		reg. number: An
+	-(An) 		100		reg. number: An
+	(d16,An)	101		reg. number: An  <-- address with displacement
+	(d8,An,xn)	110		reg. number: An	 <-- 8 bit displacement
+	(xxx).W		111		000
+	(xxx).L		111		001
+	#<data>		111		100	
+    
+    CONDITION CODES
+    X N Z V C
+    — * * * 0 
+    
+    Overﬂow occurs if the quotient is larger than a 16-bit signed integer. 
+
+                    LONG OPERATION  <-- 68020+ only?
+
+                    
+                    
+                    
+                    
+                    
+                            EOR pg. 204
+                            EOR Dn, < ea >
+                    WORD
+15 14 13 12 11 10 9     8 7 6       5 4 3       2 1 0 
+1  0  1  1  REGISTER    OPMODE      EA MODE     EA REGISTER
+
+    Register ﬁeld—Speciﬁes any of the eight data registers. 
+    Opmode ﬁeld
+        Byte    Word    Long    Operation 
+        100     101     110     < ea > ⊕ Dn → < ea > 
+        
+    EA			Mode	Register
+	Dn			000		reg. number:Dn					
+	(An)+ 		011		reg. number: An
+	-(An) 		100		reg. number: An
+	(d16,An)	101		reg. number: An  <-- address with displacement
+	(d8,An,xn)	110		reg. number: An	 <-- 8 bit displacement
+	(xxx).W		111		000
+	(xxx).L		111		001
+    
+    CONDITION CODES
+        X N Z V C
+        — * * 0 0
+        X — Not affected. 
+        N — Set if the most signiﬁcant bit of the result is set; cleared otherwise.
+        Z — Set if the result is zero; cleared otherwise. 
+        V — Always cleared. 
+        C — Always cleared
+        
+        
+        
+        
+        
+        
+ 
+                                JSR pg. 213
+                                JSR < ea >
+                                
 */
