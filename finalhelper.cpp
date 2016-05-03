@@ -27,7 +27,7 @@ REQUIRED INSTRUCTIONS TO DISSASSEMBLE
 EFFECTIVE ADDRESSING MODES
 
 	
-    Data Register Direct:          Dn
+    Data Register Direct:        Dn
     Address Register Direct:     An
     Address Register Indirect:  (An)
     Address Register Indirect with Post incrementing: (A0)+
@@ -123,6 +123,63 @@ SNE Signaling Not Equal Z 011110 Yes
 
 
 
+										EFFECTIVE ADDRESSING MODES AND CATEGORIES (pg. 60)
+
+Addressing Modes				Syntax			Mode Field		Reg. Field 		Data 	Memory 	Control	 Alterable
+Register Direct
+ Data							Dn				000				reg no.			X			-		-		X
+ Address						An 				001				reg. no. 		—			-		-		X
+
+Register Indirect
+ Address						(An)			010				reg. no.		X			X		X		X
+ Address with Postincrement		(An)+			011				reg. no.		X			X		-		X
+ Address with Predecrement		-(An)			100				reg. no.		X			X		-		X
+ Address with Displacement		(d16, An)		101				reg. no.		X			X		X		X
+Address Register Indirect with Index
+ 8-Bit Displacement				(d 8 ,An,Xn)	110				reg. no.
+ Base Displacement 				(bd,An,Xn)		110				reg. no.
+X X
+X X
+X X
+X X
+Memory Indirect Postindexed Preindexed
+([bd,An],Xn,od) ([bd,An,Xn],od)
+110 110
+reg. no. reg. no.
+X X
+X X
+X X
+X X
+Program Counter Indirect with Displacement (d 
+16 ,PC) 111 010 X X X —
+Program Counter Indirect with Index 8-Bit Displacement Base Displacement
+(d 8 ,PC,Xn) (bd,PC,Xn)
+111 111
+011 011
+X X
+X X
+X X
+— —
+Program Counter Memory Indirect Postindexed Preindexed
+([bd,PC],Xn,od) ([bd,PC,Xn],od)
+111 111
+011 011
+X X
+X X
+X X
+X X
+Absolute Data Addressing Short Long
+(xxx).W (xxx).L
+111 111
+000 000
+X X
+X X
+X X
+— —
+Immediate #<xxx> 111 100 X X — —
+
+
+
 
 
 									INTEGER OPERATIONS
@@ -131,6 +188,14 @@ SNE Signaling Not Equal Z 011110 Yes
 15 14 13 12 		11 10 9 		8 7 6 		5 4 3		2 1 0 
 1  1  0  1 			REGISTER 		OPMODE		EA MODE 	EA REGISTER
 
-
-
+	EA			Mode	Register
+	(An) 		010		reg. number: An
+	(An)+ 		011		reg. number: An
+	-(An) 		100		reg. number: An
+	(d16,An)	101		reg. number: An  <-- address with displacement
+	(d8,An,xn)	110		reg. number: An	<-- 8 bit displacement
+	(xxx).W		111		000
+	(xxx).L		111		001
+	
+	
 */
