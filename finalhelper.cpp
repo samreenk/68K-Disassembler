@@ -7,21 +7,46 @@ convert it to 68K assembly instructions.
 /*
 REQUIRED INSTRUCTIONS TO DISSASSEMBLE
 	
-    MOVE, MOVEA, MOVEM
-    ADD, ADDA
-    SUB, SUBQ
-    MULS, DIVS
-    LEA
-    OR, ORI
-    NEG
-    EOR
-    LSR, LSL
-    ASR, ASL
-    ROL, ROR
-    BCLR
-    CMP, CMPI
-    Bcc (BCS, BGE, BLT, BVC)
-    BRA, JSR, RTS
+    MOVE, MOVEA, MOVEM						
+    *ADD, *ADDA							
+    SUB, SUBQ							
+    MULS, DIVS							
+    LEA									
+    OR, ORI								
+    NEG									
+    EOR									
+    LSR, LSL							
+    ASR, ASL							
+    ROL, ROR							
+    *BCLR								
+    CMP, CMPI							
+    *Bcc (BCS, BGE, BLT, BVC)			
+    *BRA, JSR, RTS		
+
+
+*ADD, *ADDA
+*BCLR
+*BRA,
+*Bcc (BCS, BGE, BLT, BVC)
+ASL
+ASR,
+CMP,
+CMPI
+DIVS
+EOR
+JSR,
+LEA
+LSL
+LSR,
+MULS,
+NEG
+OR,
+ORI
+ROL,
+ROR
+RTS
+SUB,
+SUBQ	
 
 	
 EFFECTIVE ADDRESSING MODES
@@ -124,59 +149,44 @@ SNE Signaling Not Equal Z 011110 Yes
 
 
 										EFFECTIVE ADDRESSING MODES AND CATEGORIES (pg. 60)
+											* indicates required, ** indicates optional at end
+											nothing means don't bother with
 
 Addressing Modes				Syntax			Mode Field		Reg. Field 		Data 	Memory 	Control	 Alterable
 Register Direct
- Data							Dn				000				reg no.			X			-		-		X
- Address						An 				001				reg. no. 		—			-		-		X
+ *Data							Dn				000				reg no.			X			-		-		X
+ *Address						An 				001				reg. no. 		—			-		-		X
 
 Register Indirect
- Address						(An)			010				reg. no.		X			X		X		X
- Address with Postincrement		(An)+			011				reg. no.		X			X		-		X
- Address with Predecrement		-(An)			100				reg. no.		X			X		-		X
- Address with Displacement		(d16, An)		101				reg. no.		X			X		X		X
+ *Address						(An)			010				reg. no.		X			X		X		X
+ *Address with Postincrement	(An)+			011				reg. no.		X			X		-		X
+ *Address with Predecrement		-(An)			100				reg. no.		X			X		-		X
+ **Address with Displacement	(d16, An)		101				reg. no.		X			X		X		X
+ 
 Address Register Indirect with Index
- 8-Bit Displacement				(d 8 ,An,Xn)	110				reg. no.
- Base Displacement 				(bd,An,Xn)		110				reg. no.
-X X
-X X
-X X
-X X
-Memory Indirect Postindexed Preindexed
-([bd,An],Xn,od) ([bd,An,Xn],od)
-110 110
-reg. no. reg. no.
-X X
-X X
-X X
-X X
-Program Counter Indirect with Displacement (d 
-16 ,PC) 111 010 X X X —
-Program Counter Indirect with Index 8-Bit Displacement Base Displacement
-(d 8 ,PC,Xn) (bd,PC,Xn)
-111 111
-011 011
-X X
-X X
-X X
-— —
-Program Counter Memory Indirect Postindexed Preindexed
-([bd,PC],Xn,od) ([bd,PC,Xn],od)
-111 111
-011 011
-X X
-X X
-X X
-X X
-Absolute Data Addressing Short Long
-(xxx).W (xxx).L
-111 111
-000 000
-X X
-X X
-X X
-— —
-Immediate #<xxx> 111 100 X X — —
+ **8-Bit Displacement			(d8,An,Xn)		110				reg. no.		X			X		X		X
+ **Base Displacement 			(bd,An,Xn)		110				reg. no.		X			X		X		X
+ 
+Memory Indirect
+ Postindexed					([bd,An],Xn,od)	110				reg. no.		X			X		X		X
+ Preindexed						([bd,An,Xn],od)	110				reg. no.        X			X		X		X
+ 
+Program Counter Indirect
+ with Displacement 				(d16,PC) 		111 			010 			X 			X 		X 		—
+ 
+Program Counter Indirect with Index
+ 8-Bit Displacement				(d8,PC,Xn)	111				011				X			X		X		-
+ Base Displacement 				(bd,PC,Xn)		111				011				X			X		X		-
+ 
+Program Counter Memory Indirect
+ Postindexed					([bd,PC],Xn,od)	111				011				X			X		X		X
+ Preindexed 					([bd,PC,Xn],od)	111				011       		X			X		X		X
+ 
+Absolute Data Addressing
+ *Short							(xxx).W			111				000				X			X		X		-
+ *Long 							(xxx).L			111				000             X			X		X		-
+
+*Immediate						#<xxx> 			111 			100 			X 			X 		— 		—*
 
 
 
@@ -188,14 +198,102 @@ Immediate #<xxx> 111 100 X X — —
 15 14 13 12 		11 10 9 		8 7 6 		5 4 3		2 1 0 
 1  1  0  1 			REGISTER 		OPMODE		EA MODE 	EA REGISTER
 
+			OPMODE
+	BYTE	Word	Long	Operation
+	000		001		010		<ea> + Dn -> Dn
+	100		101		110		Dn + <ea> -> <ea>
+	
 	EA			Mode	Register
+	Dn			000		reg. number:Dn			if location is source operand
+	An*			001		reg. number:An			if location is source operand
 	(An) 		010		reg. number: An
 	(An)+ 		011		reg. number: An
 	-(An) 		100		reg. number: An
 	(d16,An)	101		reg. number: An  <-- address with displacement
-	(d8,An,xn)	110		reg. number: An	<-- 8 bit displacement
+	(d8,An,xn)	110		reg. number: An	 <-- 8 bit displacement
+	(xxx).W		111		000
+	(xxx).L		111		001
+	#<data>		111		100						if location is source operand
+	
+	
+
+									ADDA
+15 14 13 12 		11 10 9 		8 7 6 		5 4 3		2 1 0 
+1  1  0  1 			REGISTER 		OPMODE		EA MODE 	EA REGISTER
+
+			OPMODE
+	Word	Long
+	011		111
+	
+	EA			Mode	Register
+	Dn			000		reg. number:Dn			
+	An*			001		reg. number:An			
+	(An) 		010		reg. number: An
+	(An)+ 		011		reg. number: An
+	-(An) 		100		reg. number: An
+	(d16,An)	101		reg. number: An  <-- address with displacement
+	(d8,An,xn)	110		reg. number: An	 <-- 8 bit displacement
+	(xxx).W		111		000
+	(xxx).L		111		001
+	#<data>		111		100		
+
+	
+	
+	
+	
+									ASL, ASR
+									MEMORY Shifts
+15 14 13 12 11 10 9 	8 	7 6		 5 4 3 		2 1 0 
+1  1  1  0  0  0  0 	dr 	1 1
+EFFECTIVE ADDRESS MODE REGISTER
+
+									Bcc
+15 14 13 12 		11 10 9 8 		7 6 5 4 3 2 1 0
+0  1  1  0 			CONDITION 		8-BIT DISPLACEMENT
+	16-BIT DISPLACEMENT IF 8-BIT DISPLACEMENT = $00
+	32-BIT DISPLACEMENT IF 8-BIT DISPLACEMENT = $FF 
+	
+	Condition ﬁeld—The binary code for one of the conditions listed in the table. 
+	8-Bit Displacement ﬁeld—Twos complement integer specifying the number of bytes
+		between the branch instruction and the next instruction to be executed if the condition is met. 
+	16-Bit Displacement ﬁeld—Used for the displacement when the 8-bit displacement ﬁeld contains $00. 
+	32-Bit Displacement ﬁeld—Used for the displacement when the 8-bit displacement ﬁeld contains $FF.
+	A branch to the immediately following instruction automatically uses the 16-bit displacement format
+		because the 8-bit displacement ﬁeld contains $00 (zero offset). 
+
+		
+
+									BCLR
+15 14 13 12 11 10 9 8 7 6 	5 4 3 		2 1 0 
+0  0  0  0  1  0  0 0 1 0	EA MODE		EA REGISTER
+0  0  0  0  0  0  0 0 <----- BIT NUMBER ----->
+
+	EA			Mode	Register
+	Dn*			000		reg. number:Dn					
+	(An) 		010		reg. number: An
+	(An)+ 		011		reg. number: An
+	-(An) 		100		reg. number: An
+	(d16,An)	101		reg. number: An  <-- address with displacement
+	(d8,An,xn)	110		reg. number: An	 <-- 8 bit displacement
 	(xxx).W		111		000
 	(xxx).L		111		001
 	
 	
+	
+									BRA
+15 14 13 12 11 10 9 8 	7 6 5 4 3 2 1 0
+0  1  1  0  0  0  0 0 	8-BIT DISPLACEMENT
+	16-BIT DISPLACEMENT IF 8-BIT DISPLACEMENT = $00
+	32-BIT DISPLACEMENT IF 8-BIT DISPLACEMENT = $FF
+
+	8-Bit Displacement ﬁeld—Twos complement integer specifying the number of bytes
+		between the branch instruction and the next instruction to be executed if the condition is met. 
+	16-Bit Displacement ﬁeld—Used for the displacement when the 8-bit displacement ﬁeld contains $00. 
+	32-Bit Displacement ﬁeld—Used for the displacement when the 8-bit displacement ﬁeld contains $FF.
+	A branch to the immediately following instruction automatically uses the 16-bit displacement format
+		because the 8-bit displacement ﬁeld contains $00 (zero offset). 
+		
+
+		
+
 */
