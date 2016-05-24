@@ -43,8 +43,8 @@ LOOPSTART       MOVE.W      (A2)+,D5    ;move the current code into D5, then inc
                 
                 BNE         DATACASE        ; if it's not any of the above, it's just data
 
-LOOPEND         LEA         CR,A1           ;load carriage return val
-                MOVE.L      #14,D0
+LOOPEND         LEA         NEWLINE,A1           ;load carriage return val
+                MOVE.L      #13,D0
                 TRAP        #15             ;print out a new line so next instruction isn't on same line
                 BRA         LOOPSTART       ;go back into the loop and check the next instruction value
 
@@ -518,7 +518,7 @@ RTSCODE         EQU         $4E76       ;Hex version of RTS
 JSRSTARTBYTE    EQU         $4E         ;next two digits are 10+ EA Mode first 2 digits, final four are EA Mode final digit(1) and EA register (3)
 NEGSTARTBYTE    EQU         $44         ;starting byte of NEG - next two bits are size, next 3 are EA mode, last 3 are EA reg
 
-NOMORECODE      EQU         $FFFFFFFF   ;if A1 = this, then you've hit the end. I think
+NOMORECODE      EQU         $FFFF   ;if A1 = this, then you've hit the end. I think
 
 
 
@@ -544,6 +544,7 @@ LONGEND         DC.L        '.L  ',0          ;same, but long
 DATAREG         DC.L        'D',0           ;D for data reg... this can probably be done better
 
 CR              EQU         $0D             ;carriage return
+NEWLINE         DC.L        '',CR
 
                 END         START        ; last line of source
 
