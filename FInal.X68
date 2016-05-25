@@ -35,13 +35,24 @@ LOOPSTART       MOVE.W      (A2)+,D5    ;move the current code into D5, then inc
                 CMPI.W      #RTSCODE,D5             ;compare the RTS value to current instruction value
                 BEQ         RTSCASE
 
-                CMPI.B      #JSRSTARTBYTE,D5      ; compare the JSR starting byte to current instruction byte
-                BEQ         JSRCASE
+                *So here JSR start byte is 4E
+                MOVE.W      #JSRSTARTBYTE,D6
+                ROL         #8,D6
+                CMP.W       D6,D5      ; compare the D6 (holds 4E00) to D5 (instruction)
+                BLT         NEGCMP      ;if D5 is lower, then it's not a JSR
+                CMPI.W      #$4F00,D5   ;compare again
+                BLT         JSRCASE     ;if it's lower than 4F00, greater than 4DFF, it's a potential JSR
                 
-                CMPI.B      #NEGSTARTBYTE,D5
-                BEQ         NEGCASE
+                *NEG start byte is 44
+NEGCMP          CLR.L       D6          ;reset D6
+                MOVE.W      NEGSTARTBYTE,D6     ;move the starting byte into D6
+                ROL         #8,D6               ;rotate bytes so they're actually in the front, D6 is now 4400
+                CMP.W       D6,D5               ;compare the instrcution code to 4400
+                BLT         DATASTUFF           ;if D5 is less, it's not NEG
+                CMPI.W      #$4500,D5
+                BLT         NEGCASE             ;if it's less than 4500, greater or equal to 4400, check neg
                 
-                BNE         DATACASE        ; if it's not any of the above, it's just data
+DATASTUFF       BNE         DATACASE        ; if it's not any of the above, it's just data
 
 LOOPEND         LEA         NEWLINE,A1           ;load carriage return val
                 MOVE.L      #13,D0
@@ -547,6 +558,7 @@ CR              EQU         $0D             ;carriage return
 NEWLINE         DC.L        '',CR
 
                 END         START        ; last line of source
+
 
 
 
