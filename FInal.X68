@@ -403,7 +403,7 @@ NEGXXXLW        MOVE.L      #14,D0      ;the NEG is still loaded, so print it no
 *NEG.L $XXXXXXXX
 NEGXXXLL        MOVE.L      #14,D0      ;the NEG is still loaded, so print it now
                 TRAP        #15         ;have now printed "NEG"
-                LEA         WORDEND,A1  ;load the .L
+                LEA         LONGEND,A1  ;load the .L
                 TRAP        #15             ;have now printed "NEG.L  "
                 LEA         DOLLARSIGN,A1
                 TRAP        #15             ;have now printed "NEG.L  $"
@@ -423,17 +423,87 @@ NEGXXXLL        MOVE.L      #14,D0      ;the NEG is still loaded, so print it no
                             *1 is .B, 5 is .W, 9 is .L
             *Not sure yet if it is the instruction, but these are the final tests for NEG.X (An) or (An)+
             *Make sure to check from low->high and always BLT
-NEGADDREG       CMPI.W      #$4420,D5       ;If 4410-441F, it's either NEG.B (An) or -(An)
+            
+            
+            *******************************************************************************************EDITING BELOW THIS LINE **************************************************
+NEGADDREG       CMPI.W      #$4410,D5       
+                BLT         MAYBEDATAREG    ;Below 4410 it could be a data reg
+                CMPI.W      #$4420,D5       ;If 4410-441F, it's either NEG.B (An) or (An)+
                 BLT         POSSIBLENEGB
-                CMPI.W      #$4460,D5       ;if 4450-445F, it's either NEG.W (An) or -(An)
+                CMPI        #$4450,D5
+                BLT         MAYBEDATAREG    ;below 4450 it could be a data reg
+                CMPI.W      #$4460,D5       ;if 4450-445F, it's either NEG.W (An) or (An)+
                 BLT         POSSIBLENEGW
-                CMPI.W      #$44A0,D5       ;if 4490-449F, it's either NEG.L (An) or -(An)
+                CMPI.W      #$4490,D5
+                BLT         MAYBEDATAREG    ;below 4490 it could be a data reg
+                CMPI.W      #$44A0,D5       ;if 4490-449F, it's either NEG.L (An) or (An)+
                 BLT         POSSIBLENEGL
+MAYBEDATAREG    *time to check for Data reg, neglected to do so earlier
+                *possible values are 4400-7, 4440-7, 4480-7, being .B, .W and .L respectively
+                CMPI.W      #$4408,D5       ;if less, than it's possibly .B Dx
+                BLT         MAYBENEGBDX
+                CMPI.W      #$4448,D5
+                BLT         MAYBENEGWDX
+                CMPI.W      #$4488,D5
+                BLT         MAYBENEGLDX
                 BRA         DATACASE        ;if it's none of the above, it's data
+                
+MAYBENEGBDX     CMPI.W      #$4400,D5        ;check if between 4400-4407
+                BLT         DATACASE        ;if not it's data
+                MOVE.L      #14,D0          ;otherwise it's NEG.B Dx
+                TRAP        #15             ;print "NEG"
+                LEA         BYTEEND,A1
+                TRAP        #15             ;now printed "NEG.B  "
+                LEA         DATAREG,A1
+                TRAP        #15             ;now printed "NEG.B  D"
+                SUBI.W      #$4400,D5       ;d5 is now going to store which reg you actually have since D5-4400 = reg value
+                CLR.L       D1              ;prep D1 for storage
+                MOVE.W      D5,D1           ;move the D5 value to D1
+                MOVE.L      #3,D0           ;load trap task 3
+                TRAP        #15             ;now printed "NEG.B  Dx"
+                
+                MOVEM       (SP)+,D5        ;reload the stack
+                BRA         LOOPEND         ;onto the next instruction
+                
+                
+MAYBENEGWDX     CMPI.W      #$4440,D5       ;Check if it's between 4440-4447
+                BLT         DATACASE        ;if not it's data
+                MOVE.L      #14,D0          ;otherwise it's NEG.W Dx
+                TRAP        #15             ;print "NEG"
+                LEA         WORDEND,A1
+                TRAP        #15             ;now printed "NEG.W  "
+                LEA         DATAREG,A1
+                TRAP        #15             ;now printed "NEG.W  D"
+                SUBI.W      #$4440,D5       ;d5 is now going to store which reg you actually have since D5-4400 = reg value
+                CLR.L       D1              ;prep D1 for storage
+                MOVE.W      D5,D1           ;move the D5 value to D1
+                MOVE.L      #3,D0           ;load trap task 3
+                TRAP        #15             ;now printed "NEG.W  Dx"
+                
+                MOVEM       (SP)+,D5        ;reload the stack
+                BRA         LOOPEND         ;onto the next instruction
+                
+MAYBENEGLDX     CMPI.W      #$4480,D5        ;check if between 4480-4487
+                BLT         DATACASE        ;if not it's data
+                MOVE.L      #14,D0          ;otherwise it's NEG.L Dx
+                TRAP        #15             ;print "NEG"
+                LEA         LONGEND,A1
+                TRAP        #15             ;now printed "NEG.L  "
+                LEA         DATAREG,A1
+                TRAP        #15             ;now printed "NEG.L  D"
+                SUBI.W      #$4480,D5       ;d5 is now going to store which reg you actually have since D5-4400 = reg value
+                CLR.L       D1              ;prep D1 for storage
+                MOVE.W      D5,D1           ;move the D5 value to D1
+                MOVE.L      #3,D0           ;load trap task 3
+                TRAP        #15             ;now printed "NEG.L  Dx"
+                
+                MOVEM       (SP)+,D5        ;reload the stack
+                BRA         LOOPEND         ;onto the next instruction
+                
                 
 POSSIBLENEGB    CMPI.W      #$4410,D5       ;this is final test if between 4410-441F
                 BLT         DATACASE        ;if it's not, it's data
-                *from here on out we know it's a NEG.B of (An) or -(An). which depends on final nybble.
+                *from here on out we know it's a NEG.B of (An) or (An)+. which depends on final nybble.
                 *NEG is still stored in A1
                 MOVE.L      #14,D0
                 TRAP        #15             ;print "NEG"
@@ -441,15 +511,15 @@ POSSIBLENEGB    CMPI.W      #$4410,D5       ;this is final test if between 4410-
                 TRAP        #15             ;have now printed "NEG.B  "
                 CLR.L       D6              ;make sure D6 is blank
                 MOVE.W      D5,D6           ;move D5's value into D6 as a temp
-                SUBI.W      #$4410,D6       ;this will make D6 have the value of 0-F. if it's 0-7, it's gonna be an A(n) thing, 8-F, -(An)
+                SUBI.W      #$4410,D6       ;this will make D6 have the value of 0-F. if it's 0-7, it's gonna be an A(n) thing, 8-F, (An)+
                 CMPI.B      #$8,D6      
                 BLT         NEGANCASE       ;it's less, so it's A(n).
-                BRA         NEGDECANCASE    ;otherwise it's 8-F so -(An) case
+                BRA         NEGINCANCASE    ;otherwise it's 8-F so (An)+ case
 
 
 POSSIBLENEGW    CMPI.W      #$4450,D5   ;this is final test of it it's between 4450 and 445F
                 BLT         DATACASE    ;if it's not, it's data
-                *from here on out we know it's a NEG.W of (An) or -(An). which depends on final nybble
+                *from here on out we know it's a NEG.W of (An) or (An)+. which depends on final nybble
                 *NEG is still stored in A1
                 MOVE.L      #14,D0
                 TRAP        #15             ;print "NEG"
@@ -457,10 +527,10 @@ POSSIBLENEGW    CMPI.W      #$4450,D5   ;this is final test of it it's between 4
                 TRAP        #15             ;have now printed "NEG.W  "
                 CLR.L       D6              ;make sure D6 is blank
                 MOVE.W      D5,D6           ;move D5's value into D6 as a temp
-                SUBI.W      #$4450,D6       ;this will make D6 have the value of 0-F. if it's 0-7, it's gonna be an A(n) thing, 8-F, -(An)
+                SUBI.W      #$4450,D6       ;this will make D6 have the value of 0-F. if it's 0-7, it's gonna be an A(n) thing, 8-F, (An)+
                 CMPI.B      #$8,D6      
                 BLT         NEGANCASE       ;it's less, so it's A(n).
-                BRA         NEGDECANCASE    ;otherwise it's 8-F so -(An) case
+                BRA         NEGINCANCASE    ;otherwise it's 8-F so (An)+ case
 
 POSSIBLENEGL    CMPI.W      #$4490,D5   ;this is final test of it it's between 4490 and 449F
                 BLT         DATACASE    ;if it's not, it's data
@@ -472,10 +542,10 @@ POSSIBLENEGL    CMPI.W      #$4490,D5   ;this is final test of it it's between 4
                 TRAP        #15             ;have now printed "NEG.L  "
                 CLR.L       D6              ;make sure D6 is blank
                 MOVE.W      D5,D6           ;move D5's value into D6 as a temp
-                SUBI.W      #$4490,D6       ;this will make D6 have the value of 0-F. if it's 0-7, it's gonna be an A(n) thing, 8-F, -(An)
+                SUBI.W      #$4490,D6       ;this will make D6 have the value of 0-F. if it's 0-7, it's gonna be an A(n) thing, 8-F, (An)+
                 CMPI.B      #$8,D6      
                 BLT         NEGANCASE       ;it's less, so it's A(n).
-                BRA         NEGDECANCASE    ;otherwise it's 8-F so -(An) case
+                BRA         NEGINCANCASE    ;otherwise it's 8-F so (An)+ case
                 
          *the resulting output will be NEG.X (An)       
 NEGANCASE       LEA         INDIRECTADAB,A1
@@ -491,16 +561,18 @@ NEGANCASE       LEA         INDIRECTADAB,A1
                 MOVEM       (SP)+,D5        ;reload the stack
                 BRA         LOOPEND         ;onto the next instruction
 
-            *the resulting output will be NEG.X -(An)
-NEGDECANCASE    LEA         INDIRECTADDECB,A1
-                TRAP        #15             ;will now have printed "NEG.X  -(A"
-                MOVE.B      #16,D2          ;load D2 for trap task to display hex
-                MOVE.L      #15,D0          ;load trap task 15
-                MOVE.L      D6,D1           ;move the value in D6 (n) into D1
-                TRAP        #15             ;have now printed "NEG.X  -(An"
-                LEA         CLOSEPAREN,A1   
+            *the resulting output will be NEG.X (An)+
+NEGINCANCASE    LEA         INDIRECTADAB,A1
+                TRAP        #15             ;will now have printed "NEG.X  (A"
+                *D6 will currently contain n+8.
+                SUBI.W      #8,D6           ;fix that offset by subtracting 8
+                CLR.L       D1              ;clear out D1
+                MOVE.W      D6,D1           ;move the D6 value into D1 for trap task
+                MOVE.L      #3,D0           ;load trap task 3
+                TRAP        #15             ;have now printed "NEG.X  (An"
+                LEA         INCREMENTEND,A1
                 MOVE.L      #14,D0
-                TRAP        #15             ;have now printed "NEG.X  -(An)"
+                TRAP        #15             ;have now printed "NEG.X (An)+"
                 
                 MOVEM       (SP)+,D5        ;reload the stack
                 BRA         LOOPEND         ;onto the next instruction
@@ -513,11 +585,30 @@ NEGDECANCASE    LEA         INDIRECTADDECB,A1
 ENDCASE         SIMHALT             ; halt simulator
 
 
-*currently tests: NOP, NEG, JSR, MOVE.L (not implemented yet)
-TESTCODE        NOP
-                MOVE.L      #14,D7
-                NEG.B       D7
-                JSR         ENDCASE
+*currently tests: NOP, NEG, JSR, RTS
+TESTCODE        *test for NOP below
+                NOP
+                *tests for NEG below, still need (xxx).W/L
+                NEG.B       D0      
+                NEG.W       D1
+                NEG.L       D3
+                NEG.B       (A0)
+                NEG.W       (A1)
+                NEG.L       (A2)
+                NEG.B       (A3)+
+                NEG.W       (A4)+
+                NEG.L       (A5)+
+                NEG.B       -(A6)
+                NEG.W       -(A7)
+                NEG.L       -(A0)
+                *tests for JSR below
+                RTS
+                JSR         ENDCASE     ;honestly not sure which mode this tests. (xxx).L?
+                JSR         (A1)
+                *still need more JSR tests
+                
+                *test for RTS
+                
 
 * Put variables and constants here
 
@@ -525,7 +616,7 @@ STACKADDRESS    EQU         $7000    ;marks the location of the start of the sta
 
 *various instruction's hex values (or partial hex values) are stored here
 NOPCODE         EQU         $4E71       ;hex version of the NOP
-RTSCODE         EQU         $4E76       ;Hex version of RTS
+RTSCODE         EQU         $4E75       ;Hex version of RTS
 JSRSTARTBYTE    EQU         $4E         ;next two digits are 10+ EA Mode first 2 digits, final four are EA Mode final digit(1) and EA register (3)
 NEGSTARTBYTE    EQU         $44         ;starting byte of NEG - next two bits are size, next 3 are EA mode, last 3 are EA reg
 
@@ -558,6 +649,7 @@ CR              EQU         $0D             ;carriage return
 NEWLINE         DC.L        '',CR
 
                 END         START        ; last line of source
+
 
 
 
