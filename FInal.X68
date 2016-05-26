@@ -29,13 +29,14 @@ LOOPSTART       MOVE.W      (A2)+,D5    ;move the current code into D5, then inc
                 CMPI.L      #NOMORECODE,D5      ;end of instructions, branch to program end
                 BEQ         ENDCASE
                 
-                CMPI.W      #NOPCODE,D5          ; compare NOPCODE value to current instruction val
+NOPCMP          CMPI.W      #NOPCODE,D5          ; compare NOPCODE value to current instruction val
                 BEQ         NOPCASE
                 
-                CMPI.W      #RTSCODE,D5             ;compare the RTS value to current instruction value
+RTSCMP          CMPI.W      #RTSCODE,D5             ;compare the RTS value to current instruction value
                 BEQ         RTSCASE
 
                 *So here JSR start byte is 4E
+JSRCMP          CLR.L       D6              ;clear d6
                 MOVE.W      #JSRSTARTBYTE,D6
                 ROL         #8,D6
                 CMP.W       D6,D5      ; compare the D6 (holds 4E00) to D5 (instruction)
@@ -51,6 +52,12 @@ NEGCMP          CLR.L       D6          ;reset D6
                 BLT         DATASTUFF           ;if D5 is less, it's not NEG
                 CMPI.W      #$4500,D5
                 BLT         NEGCASE             ;if it's less than 4500, greater or equal to 4400, check neg
+                
+                *ASL/ASR/LSL/LSR starts with $E
+ALSLRCMP        CLR.L       D6          ;reset D6
+                MOVE.W      #ALSRLSTARTNYBLE,D6     ;
+                
+                
                 
 DATASTUFF       BNE         DATACASE        ; if it's not any of the above, it's just data
 
@@ -619,6 +626,7 @@ NOPCODE         EQU         $4E71       ;hex version of the NOP
 RTSCODE         EQU         $4E75       ;Hex version of RTS
 JSRSTARTBYTE    EQU         $4E         ;next two digits are 10+ EA Mode first 2 digits, final four are EA Mode final digit(1) and EA register (3)
 NEGSTARTBYTE    EQU         $44         ;starting byte of NEG - next two bits are size, next 3 are EA mode, last 3 are EA reg
+ALSRLSTARTNYBLE EQU         $E          ;starting nybble for ASL/ASR/LSL/LSR. next nybble determines reg/mem shift
 
 NOMORECODE      EQU         $FFFF   ;if A1 = this, then you've hit the end. I think
 
@@ -649,6 +657,7 @@ CR              EQU         $0D             ;carriage return
 NEWLINE         DC.L        '',CR
 
                 END         START        ; last line of source
+
 
 
 
