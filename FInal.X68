@@ -16,6 +16,7 @@ START:          ORG         $1000      ; first instruction of program
                 CLR.L       D3
                 CLR.L       D5
                 CLR.L       D6
+                CLR.L       D7
                 
 *Get the location of the test code
                 LEA         TESTCODE,A2         ; load address of the testcode
@@ -55,7 +56,14 @@ NEGCMP          CLR.L       D6          ;reset D6
                 
                 *ASL/ASR/LSL/LSR starts with $E
 ALSLRCMP        CLR.L       D6          ;reset D6
-                MOVE.W      #ALSRLSTARTNYBLE,D6     ;
+                MOVE.W      #ALSRLSTARTNYBLE,D6     ;move the starting nybble into D6
+                ROL         #8,D6                   ;do max rotation
+                ROL         #4,D6                   ;do another rotation such that you have $E000
+                MOVEM       D5,-(SP)                ;store the real D5 value for safekeeping
+                AND.W       D6,D5                   ;AND D5 (instruction) with D6 ($E000)
+                CMP.W       D6,D5                   ;if both D5 & D6 are equal, branch out to possible ALSLR checks
+                BEQ         ALSLRPTONE              
+                MOVEM       (SP)+,D5                ;otherwise, reload the stack as it should be and move on
                 
                 
                 
@@ -65,8 +73,7 @@ LOOPEND         LEA         NEWLINE,A1           ;load carriage return val
                 MOVE.L      #13,D0
                 TRAP        #15             ;print out a new line so next instruction isn't on same line
                 BRA         LOOPSTART       ;go back into the loop and check the next instruction value
-
-
+               
 
 
 
@@ -588,6 +595,73 @@ NEGINCANCASE    LEA         INDIRECTADAB,A1
 *********************************************************************************  END OF NEG ISNTRUCTION DISASSAMEBLY **************************************************************************
 
 
+
+
+
+
+
+
+
+
+********************************************************************************* START OF ASL/ASR/LSL/LSR DISSASSEMBLY ***************************************************************************
+
+ALSLRPTONE      MOVEM       (SP)+,D5        ;reload the correct D5 (instruction) value you had altered prior
+                MOVEM       D5,-(SP)        ;now save the correct value again
+                
+ALSLRMEMSHIFT   MOVE.W      $E0D0,D6        ;check for a mem shift first
+                CMP.W       D6,D5           ;if D5 is between E0D0 and E0EF, it's a mem ASR
+                *NOTE it's not E0C0 because the min 3rd nybble is 1101, not 1100 due to available EA modes
+                    *thus min you can have is E0D0
+                BLT         ALSLRREGSHIFT   ;if not between, check if it's a reg shift
+                MOVE.W      $E0E8,D6
+                *NOTE it's not E0FF because due to available EA modes, the max 3rd nybble is 1110, not 1111
+                    *if you have 1110 as you're 3rd nybble, the 4th nybble has to start with 0, so the max
+                    *4th nybble is 0111, thus the max value you can have is E0E7
+                CMP.W       D6,D5
+                BLT         ASRMEM          ;if it passes those checks, it's an ASR mem shift
+                
+                MOVE.W      $E1D0,D6        ;If D5 is between E1D0 and E1EF, it's a mem ASL
+                CMP.W       D6,D5
+                BLT         ALSLRREGSHIFT   ;if not between, check if it's a reg shift
+                MOVE.W      $E1E8,D6
+                CMP.W       D6,D5
+                BLT         ASLMEM          ;if it passes those checks, it's an ASL mem shift
+                
+                MOVE.W      $E2D0,D6        ;If D5 is between E2D0 and E2EF, it's a mem LSR
+                CMP.W       D6,D5
+                BLT         ALSLRREGSHIFT   ;if not between, check if it's a reg shift
+                MOVE.W      $E2E8,D6
+                CMP.W       D6,D5
+                BLT         LSRMEM          ;if it passes those checks, it's an LSR mem shift
+
+                MOVE.W      $E3D0,D6        ;If D5 is between E3D0 and E3EF, it's a mem LSL
+                CMP.W       D6,D5
+                BLT         ALSLRREGSHIFT   ;if not between, check if it's a reg shift
+                MOVE.W      $E3E8,D6
+                CMP.W       D6,D5
+                BLT         ASLMEM          ;if it passes those checks, it's an LSL mem shift
+                BRA         ALSLRREGSHIFT   ;if it doesn't pass any of those checks, try seeing if it's a reg shift
+
+        *confirmed for all cases below to be that particular instruction, just need to parse out the EA mode and Reg
+            *last 6 bits - last byte comparisions needed. Min value $D0, max value $E7
+ASRMEM          
+
+ASLMEM
+
+LSRMEM
+
+ASLMEM
+                *Potentially a ASL/ASR/LSL/LSR register shift instruction, potentially data
+ALSLRREGSHIFT   
+
+
+
+********************************************************************************* END OF ASL/ASR/LSL/LSR DISSASSEMBLY ***************************************************************************
+
+
+
+
+
 *Stop program
 ENDCASE         SIMHALT             ; halt simulator
 
@@ -595,7 +669,7 @@ ENDCASE         SIMHALT             ; halt simulator
 *currently tests: NOP, NEG, JSR, RTS
 TESTCODE        *test for NOP below
                 NOP
-                *tests for NEG below, still need (xxx).W/L
+                *tests for NEG below
                 NEG.B       D0      
                 NEG.W       D1
                 NEG.L       D3
@@ -608,13 +682,46 @@ TESTCODE        *test for NOP below
                 NEG.B       -(A6)
                 NEG.W       -(A7)
                 NEG.L       -(A0)
+                NEG.W       $FFFFFFFF
+                NEG.L       $FFFFFFFF
                 *tests for JSR below
                 RTS
                 JSR         ENDCASE     ;honestly not sure which mode this tests. (xxx).L?
                 JSR         (A1)
+                JSR         $FFFFFFFF  ;maybe?
                 *still need more JSR tests
                 
                 *test for RTS
+                RTS
+                
+                *Test for ASL, ASR, LSL, LSR
+                ASL.B       #1,D0           ;reg shift
+                ASL.W       D1,D2           ;reg shift
+                ASL.L       D3,D4           ;reg shift
+                ASL         (A0)            ;mem shift
+                ASL         (A1)+           ;mem shift
+                ASL         -(A2)           ;mem shift
+                
+                LSL.B       #2,D5           ;reg shift
+                LSL.W       D6,D7           ;reg shift
+                LSL.L       #3,D0           ;reg shift
+                LSL         (A3)            ;mem shift
+                LSL         (A4)+           ;mem shift
+                LSL         -(A5)           ;mem shift
+                
+                ASR.B       #4,D1           ;reg shift
+                ASR.W       D2,D3           ;reg shift
+                ASR.L       D4,D5           ;reg shift
+                ASR         (A6)            ;mem shift
+                ASR         (A7)+           ;mem shift
+                ASR         -(A0)           ;mem shift
+                
+                LSR.B       #5,D6           ;reg shift
+                LSR.W       D7,D0           ;reg shift
+                LSR.L       #6,D1           ;reg shift
+                LSR         (A1)            ;mem shift
+                LSR         (A2)+           ;mem shift
+                LSR         -(A3)           ;mem shift
                 
 
 * Put variables and constants here
@@ -657,6 +764,7 @@ CR              EQU         $0D             ;carriage return
 NEWLINE         DC.L        '',CR
 
                 END         START        ; last line of source
+
 
 
 
