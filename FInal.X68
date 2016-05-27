@@ -659,6 +659,7 @@ ASRMEM          CLR.L       D6              ;clear D6
                 MOVE.B      #$E8,D6         ;check if D5 is between E0E0 and E0E7 otherwise
                 CMP.B       D6,D5
                 BGT         DATACASE        ;if it's greater, it's data
+                
                 *henseforth we know that the instruction is E0E(0-7), meaning -(An), where n is between 0-7
                     *n is determined by the last 3 bits
                 CLR.B       D6              ;more D6 clearing
@@ -670,7 +671,20 @@ ASRMEM          CLR.L       D6              ;clear D6
                 LEA         ASRMESSAGE,A1
                 MOVE.L      #14,D0
                 TRAP        #$15            ;have now printed "ASR"
+                LEA         DOUBLESPACE,A1      ;since mem shifts don't specify sizes, add the double space
+                TRAP        #15             ;have now printed "ASR  "
+                LEA         INDIRECTADDECB,A1
+                TRAP        #15             ;have now printed "ASR  -(A"
+                MOVE.B      #3,D0
+                TRAP        #15             ; have now printed "ASR  -(An"
+                LEA         CLOSEPARENS,A1
+                MOVE.B      #14,D0
+                TRAP        #15             ;have now printed "ASR  -(An)"
                 
+                MOVEM       D5,-(SP)        ;Restore D5 value
+                BRA         LOOPEND         ;go to next instruction
+                
+           *ASR is going to be between E0D0-E0DF
 ASRTHREED       
                 
                 MOVEM       D5,-(SP)        ;Restore D5 value
@@ -801,6 +815,7 @@ NEWLINE         DC.L        '',CR           ;for making a newline
 DOUBLESPACE     DC.L        '  ',0          ;needed to make a double space in some circumstances 
 
                 END         START        ; last line of source
+
 
 
 
