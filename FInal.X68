@@ -644,11 +644,18 @@ ALSLRMEMSHIFT   MOVE.W      #$E0D0,D6        ;check for a mem shift first
 
 
                 *Potentially a ASL/ASR/LSL/LSR register shift instruction, potentially data
-ALSLRREGSHIFT   
+                *Format of valid sutff will be $E(0-F)(0-A, even)(0-F)
+                    *if the final nybble is 0-7, it's Logical Shift, 8-F is Arithmetic Shift
+                    *if the second nybble is even, it's a Right Shift, if it's odd, it's a Left Shift
+                    *for the 3rd nybble: 0,2 is .B     4,6 is .W       8,A is .L
+ALSLRREGSHIFT   CLR.L       D6              ;start by checking validity of nybble 3 being below B
+                MOVE.B      #$B0,D6         ;B0 is +1 of the max value allowed in the byte space
 
 
 
-        *confirmed for all cases below to be that particular instruction, just need to parse out the EA mode and Reg
+
+
+        *Almost confirmed for all cases below to be that particular instruction, just need to parse out the EA mode and Reg
             *last 6 bits - last byte comparisions needed. Min value $D0, max value $E7
        *ASR is going to be between E0D0, E0EF
 ASRMEM          CLR.L       D6              ;clear D6
@@ -656,7 +663,7 @@ ASRMEM          CLR.L       D6              ;clear D6
                 CMP.B       D6,D5           ;check if D5 (instruciton) is between E0D0 and E0DF (checking if 3rd nybble is D)
                 BLT         ASRTHREED
                 CLR.B       D6              ;clear D6 again
-                MOVE.B      #$E8,D6         ;check if D5 is between E0E0 and E0E7 otherwise
+                MOVE.B      #$E7,D6         ;check if D5 is between E0E0 and E0E7 otherwise
                 CMP.B       D6,D5
                 BGT         DATACASE        ;if it's greater, it's data
                 
@@ -681,23 +688,310 @@ ASRMEM          CLR.L       D6              ;clear D6
                 MOVE.B      #14,D0
                 TRAP        #15             ;have now printed "ASR  -(An)"
                 
-                MOVEM       D5,-(SP)        ;Restore D5 value
+                MOVEM       (SP)+,D5        ;reload the stack
                 BRA         LOOPEND         ;go to next instruction
                 
            *ASR is going to be between E0D0-E0DF
-ASRTHREED       
+ASRTHREED       CLR.B       D6              ;more D6 clearing
+                MOVE.B      #$D0,D6         ;store minimum D5 value into D6
+                SUB.B       D6,D5           ;D5.B now contains the register number (0-F)
+                CMPI.B      #7,D5
+                BGT         ASRMEMANPLUS    ;branch if reg value > 7
+                *this is now for cases of ASR (An)
+                CLR.L       D1
+                MOVE.B      D5,D1           ;move reg value to D1 for printing later
                 
-                MOVEM       D5,-(SP)        ;Restore D5 value
+                LEA         ASRMESSAGE,A1
+                MOVE.L      #14,D0
+                TRAP        #$15            ;have now printed "ASR"
+                LEA         DOUBLESPACE,A1      ;since mem shifts don't specify sizes, add the double space
+                TRAP        #15             ;have now printed "ASR  "
+                LEA         INDIRECTADAB,A1
+                TRAP        #15             ;have now printed "ASR  -(A"
+                MOVE.B      #3,D0
+                TRAP        #15             ; have now printed "ASR  -(An"
+                LEA         CLOSEPARENS,A1
+                MOVE.B      #14,D0
+                TRAP        #15             ;have now printed "ASR  -(An)"
+                
+                MOVEM       (SP)+,D5        ;reload the stack
                 BRA         LOOPEND         ;go to next instruction
 
+                
+                *The below case is for ASR (An)+
+ASRMEMANPLUS    SUBI.B      #8,D5           ;sub 8 from D5 to get register value
+                CLR.L       D1
+                MOVE.B      D5,D1           ;move reg value to D1 for printing later
+                
+                LEA         ASRMESSAGE,A1
+                MOVE.L      #14,D0
+                TRAP        #$15            ;have now printed "ASR"
+                LEA         DOUBLESPACE,A1      ;since mem shifts don't specify sizes, add the double space
+                TRAP        #15             ;have now printed "ASR  "
+                LEA         INDIRECTADAB,A1
+                TRAP        #15             ;have now printed "ASR  (A"
+                MOVE.B      #3,D0
+                TRAP        #15             ; have now printed "ASR  (An"
+                LEA         INCREMENTEND,A1
+                MOVE.B      #14,D0
+                TRAP        #15             ;have now printed "ASR  (An)+"
+                
+                MOVEM       (SP)+,D5        ;reload the stack
+                BRA         LOOPEND         ;go to next instruction
+
+
+
         *ASL is going to be between E1D0, E1EF
-ASLMEM
+ASLMEM          CLR.L       D6              ;clear D6
+                MOVE.B      #$E0,D6
+                CMP.B       D6,D5           ;check if D5 (instruciton) is between E1D0 and E1DF (checking if 3rd nybble is D)
+                BLT         ASLTHREED
+                CLR.B       D6              ;clear D6 again
+                MOVE.B      #$E7,D6         ;check if D5 is between E1E0 and E1E7 otherwise
+                CMP.B       D6,D5
+                BGT         DATACASE        ;if it's greater, it's data
+                
+                *henseforth we know that the instruction is E1E(0-7), meaning -(An), where n is between 0-7
+                    *n is determined by the last 3 bits
+                CLR.B       D6              ;more D6 clearing
+                MOVE.B      #$E0,D6         ;store minimum D5 value into D6
+                SUB.B       D6,D5           ;D5.B now contains the register number (0-7)
+                CLR.L       D1
+                MOVE.B      D5,D1           ;move reg value to D1 for printing later
+                
+                LEA         ASLMESSAGE,A1
+                MOVE.L      #14,D0
+                TRAP        #$15            ;have now printed "ASL"
+                LEA         DOUBLESPACE,A1      ;since mem shifts don't specify sizes, add the double space
+                TRAP        #15             ;have now printed "ASL  "
+                LEA         INDIRECTADDECB,A1
+                TRAP        #15             ;have now printed "ASL  -(A"
+                MOVE.B      #3,D0
+                TRAP        #15             ; have now printed "ASL  -(An"
+                LEA         CLOSEPARENS,A1
+                MOVE.B      #14,D0
+                TRAP        #15             ;have now printed "ASL  -(An)"
+                
+                MOVEM       (SP)+,D5        ;reload the stack
+                BRA         LOOPEND         ;go to next instruction
+                
+           *ASL is going to be between E1D0-E1DF
+ASLTHREED       CLR.B       D6              ;more D6 clearing
+                MOVE.B      #$D0,D6         ;store minimum D5 value into D6
+                SUB.B       D6,D5           ;D5.B now contains the register number (0-F)
+                CMPI.B      #7,D5
+                BGT         ASLMEMANPLUS    ;branch if reg value > 7
+                *this is now for cases of ASL (An)
+                CLR.L       D1
+                MOVE.B      D5,D1           ;move reg value to D1 for printing later
+                
+                LEA         ASLMESSAGE,A1
+                MOVE.L      #14,D0
+                TRAP        #$15            ;have now printed "ASL"
+                LEA         DOUBLESPACE,A1      ;since mem shifts don't specify sizes, add the double space
+                TRAP        #15             ;have now printed "ASL  "
+                LEA         INDIRECTADAB,A1
+                TRAP        #15             ;have now printed "ASL  -(A"
+                MOVE.B      #3,D0
+                TRAP        #15             ; have now printed "ASL  -(An"
+                LEA         CLOSEPARENS,A1
+                MOVE.B      #14,D0
+                TRAP        #15             ;have now printed "ASL  -(An)"
+                
+                MOVEM       (SP)+,D5        ;reload the stack
+                BRA         LOOPEND         ;go to next instruction
+
+                
+                *The below case is for ASL (An)+
+ASLMEMANPLUS    SUBI.B      #8,D5           ;sub 8 from D5 to get register value
+                CLR.L       D1
+                MOVE.B      D5,D1           ;move reg value to D1 for printing later
+                
+                LEA         ASLMESSAGE,A1
+                MOVE.L      #14,D0
+                TRAP        #$15            ;have now printed "ASL"
+                LEA         DOUBLESPACE,A1      ;since mem shifts don't specify sizes, add the double space
+                TRAP        #15             ;have now printed "ASL  "
+                LEA         INDIRECTADAB,A1
+                TRAP        #15             ;have now printed "ASL  (A"
+                MOVE.B      #3,D0
+                TRAP        #15             ; have now printed "ASL  (An"
+                LEA         INCREMENTEND,A1
+                MOVE.B      #14,D0
+                TRAP        #15             ;have now printed "ASL  (An)+"
+                
+                MOVEM       (SP)+,D5        ;reload the stack
+                BRA         LOOPEND         ;go to next instruction
+
+
 
         *LSR is going to be between E2D0,E2EF
-LSRMEM
+LSRMEM          CLR.L       D6              ;clear D6
+                MOVE.B      #$E0,D6
+                CMP.B       D6,D5           ;check if D5 (instruciton) is between E2D0 and E2DF (checking if 3rd nybble is D)
+                BLT         LSRTHREED
+                CLR.B       D6              ;clear D6 again
+                MOVE.B      #$E7,D6         ;check if D5 is between E2E0 and E2E7 otherwise
+                CMP.B       D6,D5
+                BGT         DATACASE        ;if it's greater, it's data
+                
+                *henseforth we know that the instruction is E2E(0-7), meaning -(An), where n is between 0-7
+                    *n is determined by the last 3 bits
+                CLR.B       D6              ;more D6 clearing
+                MOVE.B      #$E0,D6         ;store minimum D5 value into D6
+                SUB.B       D6,D5           ;D5.B now contains the register number (0-7)
+                CLR.L       D1
+                MOVE.B      D5,D1           ;move reg value to D1 for printing later
+                
+                LEA         LSRMESSAGE,A1
+                MOVE.L      #14,D0
+                TRAP        #$15            ;have now printed "LSR"
+                LEA         DOUBLESPACE,A1      ;since mem shifts don't specify sizes, add the double space
+                TRAP        #15             ;have now printed "LSR  "
+                LEA         INDIRECTADDECB,A1
+                TRAP        #15             ;have now printed "LSR  -(A"
+                MOVE.B      #3,D0
+                TRAP        #15             ; have now printed "LSR  -(An"
+                LEA         CLOSEPARENS,A1
+                MOVE.B      #14,D0
+                TRAP        #15             ;have now printed "LSR  -(An)"
+                
+                MOVEM       (SP)+,D5        ;reload the stack
+                BRA         LOOPEND         ;go to next instruction
+                
+           *LSR is going to be between E2D0-E2DF
+LSRTHREED       CLR.B       D6              ;more D6 clearing
+                MOVE.B      #$D0,D6         ;store minimum D5 value into D6
+                SUB.B       D6,D5           ;D5.B now contains the register number (0-F)
+                CMPI.B      #7,D5
+                BGT         LSRMEMANPLUS    ;branch if reg value > 7
+                *this is now for cases of LSR (An)
+                CLR.L       D1
+                MOVE.B      D5,D1           ;move reg value to D1 for printing later
+                
+                LEA         LSRMESSAGE,A1
+                MOVE.L      #14,D0
+                TRAP        #$15            ;have now printed "LSR"
+                LEA         DOUBLESPACE,A1      ;since mem shifts don't specify sizes, add the double space
+                TRAP        #15             ;have now printed "LSR  "
+                LEA         INDIRECTADAB,A1
+                TRAP        #15             ;have now printed "LSR  -(A"
+                MOVE.B      #3,D0
+                TRAP        #15             ; have now printed "LSR  -(An"
+                LEA         CLOSEPARENS,A1
+                MOVE.B      #14,D0
+                TRAP        #15             ;have now printed "LSR  -(An)"
+                
+                MOVEM       (SP)+,D5        ;reload the stack
+                BRA         LOOPEND         ;go to next instruction
+
+                
+                *The below case is for ASR (An)+
+LSRMEMANPLUS    SUBI.B      #8,D5           ;sub 8 from D5 to get register value
+                CLR.L       D1
+                MOVE.B      D5,D1           ;move reg value to D1 for printing later
+                
+                LEA         LSRMESSAGE,A1
+                MOVE.L      #14,D0
+                TRAP        #$15            ;have now printed "LSR"
+                LEA         DOUBLESPACE,A1      ;since mem shifts don't specify sizes, add the double space
+                TRAP        #15             ;have now printed "LSR  "
+                LEA         INDIRECTADAB,A1
+                TRAP        #15             ;have now printed "LSR  (A"
+                MOVE.B      #3,D0
+                TRAP        #15             ; have now printed "LSR  (An"
+                LEA         INCREMENTEND,A1
+                MOVE.B      #14,D0
+                TRAP        #15             ;have now printed "LSR  (An)+"
+                
+                MOVEM       (SP)+,D5        ;reload the stack
+                BRA         LOOPEND         ;go to next instruction
+
+
+
 
         *LSL is going to be between E3D0,E3EF
-LSLMEM
+LSLMEM          CLR.L       D6              ;clear D6
+                MOVE.B      #$E0,D6
+                CMP.B       D6,D5           ;check if D5 (instruciton) is between E3D0 and E3DF (checking if 3rd nybble is D)
+                BLT         LSLTHREED
+                CLR.B       D6              ;clear D6 again
+                MOVE.B      #$E7,D6         ;check if D5 is between E3E0 and E3E7 otherwise
+                CMP.B       D6,D5
+                BGT         DATACASE        ;if it's greater, it's data
+                
+                *henseforth we know that the instruction is E3E(0-7), meaning -(An), where n is between 0-7
+                    *n is determined by the last 3 bits
+                CLR.B       D6              ;more D6 clearing
+                MOVE.B      #$E0,D6         ;store minimum D5 value into D6
+                SUB.B       D6,D5           ;D5.B now contains the register number (0-7)
+                CLR.L       D1
+                MOVE.B      D5,D1           ;move reg value to D1 for printing later
+                
+                LEA         LSLMESSAGE,A1
+                MOVE.L      #14,D0
+                TRAP        #$15            ;have now printed "LSL"
+                LEA         DOUBLESPACE,A1      ;since mem shifts don't specify sizes, add the double space
+                TRAP        #15             ;have now printed "LSL  "
+                LEA         INDIRECTADDECB,A1
+                TRAP        #15             ;have now printed "LSL  -(A"
+                MOVE.B      #3,D0
+                TRAP        #15             ; have now printed "LSL  -(An"
+                LEA         CLOSEPARENS,A1
+                MOVE.B      #14,D0
+                TRAP        #15             ;have now printed "LSL  -(An)"
+                
+                MOVEM       (SP)+,D5        ;reload the stack
+                BRA         LOOPEND         ;go to next instruction
+                
+           *LSL is going to be between E3D0-E3DF
+LSLTHREED       CLR.B       D6              ;more D6 clearing
+                MOVE.B      #$D0,D6         ;store minimum D5 value into D6
+                SUB.B       D6,D5           ;D5.B now contains the register number (0-F)
+                CMPI.B      #7,D5
+                BGT         LSLMEMANPLUS    ;branch if reg value > 7
+                *this is now for cases of ASL (An)
+                CLR.L       D1
+                MOVE.B      D5,D1           ;move reg value to D1 for printing later
+                
+                LEA         LSLMESSAGE,A1
+                MOVE.L      #14,D0
+                TRAP        #$15            ;have now printed "LSL"
+                LEA         DOUBLESPACE,A1      ;since mem shifts don't specify sizes, add the double space
+                TRAP        #15             ;have now printed "LSL  "
+                LEA         INDIRECTADAB,A1
+                TRAP        #15             ;have now printed "LSL  -(A"
+                MOVE.B      #3,D0
+                TRAP        #15             ; have now printed "LSL  -(An"
+                LEA         CLOSEPARENS,A1
+                MOVE.B      #14,D0
+                TRAP        #15             ;have now printed "LSL  -(An)"
+                
+                MOVEM       (SP)+,D5        ;reload the stack
+                BRA         LOOPEND         ;go to next instruction
+
+                
+                *The below case is for LSL (An)+
+LSLMEMANPLUS    SUBI.B      #8,D5           ;sub 8 from D5 to get register value
+                CLR.L       D1
+                MOVE.B      D5,D1           ;move reg value to D1 for printing later
+                
+                LEA         LSLMESSAGE,A1
+                MOVE.L      #14,D0
+                TRAP        #$15            ;have now printed "LSL"
+                LEA         DOUBLESPACE,A1      ;since mem shifts don't specify sizes, add the double space
+                TRAP        #15             ;have now printed "LSL  "
+                LEA         INDIRECTADAB,A1
+                TRAP        #15             ;have now printed "LSL  (A"
+                MOVE.B      #3,D0
+                TRAP        #15             ; have now printed "LSL  (An"
+                LEA         INCREMENTEND,A1
+                MOVE.B      #14,D0
+                TRAP        #15             ;have now printed "LSL  (An)+"
+                
+                MOVEM       (SP)+,D5        ;reload the stack
+                BRA         LOOPEND         ;go to next instruction
+
 
 
 
@@ -815,6 +1109,8 @@ NEWLINE         DC.L        '',CR           ;for making a newline
 DOUBLESPACE     DC.L        '  ',0          ;needed to make a double space in some circumstances 
 
                 END         START        ; last line of source
+
+
 
 
 
