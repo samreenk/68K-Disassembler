@@ -649,10 +649,73 @@ ALSLRMEMSHIFT   MOVE.W      #$E0D0,D6        ;check for a mem shift first
                     *if the second nybble is even, it's a Right Shift, if it's odd, it's a Left Shift
                     *for the 3rd nybble: 0,2 is .B     4,6 is .W       8,A is .L
 ALSLRREGSHIFT   CLR.L       D6              ;start by checking validity of nybble 3 being below B
-                MOVE.B      #$B0,D6         ;B0 is +1 of the max value allowed in the byte space
+                MOVE.B      #$AF,D6         ;B0 is +1 of the max value allowed in the byte space
+                CMP.B       D6,D5
+                BGT         DATACASE
+                CLR.B       D6              ; now check if the 3rd nybble is even, and then it is for sure a reg shift
+                MOVE.B      D5,D6           ; 3rd nybble last bit MUST be 0 - plus you already know it's A or lower
+                LSL.B       #3,D6           ; shift the bits left such that the last bit is the new MSB of the byte
+                ANDI.B      #$80,D6         ;and with %1000|0000 to make things simpler and just worry about MSB
+                CMP.B       #0,D6           ;if the byte is not equal to 0 at this point, it was an odd value
+                BNE         DATACASE
+                CLR.B       D6              ;next is to see which size shift it is
+                MOVE.B      #$30,D6
+                CMP.B       D6,D5           ;If D5's final byte is below 30 (ie, first nybble is 0 or 2)
+                BLT         ALSLRREGBYTE    ;it's a .B shift
+                CLR.B       D6
+                MOVE.B      #$70,D6         ;if it's below 70 (ie, first nybble is 4 or 6)
+                CMP.B       D6,D5           ;it's a .W shift
+                BLT         ALSLRREGWORD
+                CLR.B       D6
+                MOVE.B      #$B0,D6         ;finally, it's going to be a long, but let's check anyway as a failsafe
+                CMP.B       D6,D5
+                BLT         ALSLRREGLONG
+                BRA         DATACASE        ;this line should never be called
+                
+               
+            *For the next cases, we need to determine the direction of the shift, then the register shifted
+                *if the second nybble is even, it's a Right Shift, if it's odd, it's a Left Shift                 
+ALSLRREGBYTE    CLR.L       D6
+                MOVE.W      D5,D6           ;using similar logic to before, let's check if second nybble is even or odd 
+                LSL.W       #7,D6
+                ANDI.W      #$8000,D6
+                CMP         #0,D6
+                BEQ         ALSRBYTE        ;if it's even (=0), then it's either ASR or LSR
+                BRA         ALSLBYTE        ;Otherwise it's ASL or LSL
+                
+                *next is to determine if it's a Arithmetic or Logical shift
+                *if the final nybble is 0-7, it's Logical, otherwise Arithmetic
+         *_SR.B D_
+ALSRBYTE        CLR.L       D6              ;clear D6 out
+                MOVE.B      D5,D6           ;move the last byte to D6
+                *now we know the 3rd nybble is either 0 or 2... kinda useless so shifting
+                LSL.B       #4,D6
+                CMPI.B      #$80,D6     ;if >= Arithmetic, if lower, Logical
+                BLT         LSRBYTE
+        *Below two cases, it's for sure that instruction, so figure out if it's going to take a
+         * register or immediate, based on the 3rd bit of the 3rd nybble. if it's 0 it's immediate, 1: data reg
+          *if immediate, 2nd nybble's first 3 bits determine the amount, with 0 meaning 8
+          *else if it's register, it determines which register
+        *The final 3 bits of the last nybble determine the data reg being shifted.
+ASRBYTE         LEA         ASRMESSAGE,A1       ;start by printing the ASR.B since you know it's that
+                MOVE.L      #14,D0
+                TRAP        #15                 ;printed "ASR"
+                LEA         BYTEEND,A1
+                TRAP        #15                 ;printed "ASR.B  "
+                
+                
+LSRBYTE         LEA         LSRMESSAGE,A1       ;start by printing the LSR.B since you know it's that
+                MOVE.L      #14,D0
+                TRAP        #15                 ;printed "LSR"
+                LEA         BYTEEND,A1
+                TRAP        #15                 ;printed "LSR.B  "
+                
+        *_SL.B D_   
+ALSLBYTE            
 
-
-
+*eveyrthing above this can work for the below cases, just need to change what's being printed I think    
+ALSLRREGWORD
+ALSLRREGLONG
 
 
         *Almost confirmed for all cases below to be that particular instruction, just need to parse out the EA mode and Reg
@@ -677,14 +740,14 @@ ASRMEM          CLR.L       D6              ;clear D6
                 
                 LEA         ASRMESSAGE,A1
                 MOVE.L      #14,D0
-                TRAP        #$15            ;have now printed "ASR"
+                TRAP        #15            ;have now printed "ASR"
                 LEA         DOUBLESPACE,A1      ;since mem shifts don't specify sizes, add the double space
                 TRAP        #15             ;have now printed "ASR  "
                 LEA         INDIRECTADDECB,A1
                 TRAP        #15             ;have now printed "ASR  -(A"
                 MOVE.B      #3,D0
                 TRAP        #15             ; have now printed "ASR  -(An"
-                LEA         CLOSEPARENS,A1
+                LEA         CLOSEPAREN,A1
                 MOVE.B      #14,D0
                 TRAP        #15             ;have now printed "ASR  -(An)"
                 
@@ -703,14 +766,14 @@ ASRTHREED       CLR.B       D6              ;more D6 clearing
                 
                 LEA         ASRMESSAGE,A1
                 MOVE.L      #14,D0
-                TRAP        #$15            ;have now printed "ASR"
+                TRAP        #15            ;have now printed "ASR"
                 LEA         DOUBLESPACE,A1      ;since mem shifts don't specify sizes, add the double space
                 TRAP        #15             ;have now printed "ASR  "
                 LEA         INDIRECTADAB,A1
                 TRAP        #15             ;have now printed "ASR  -(A"
                 MOVE.B      #3,D0
                 TRAP        #15             ; have now printed "ASR  -(An"
-                LEA         CLOSEPARENS,A1
+                LEA         CLOSEPAREN,A1
                 MOVE.B      #14,D0
                 TRAP        #15             ;have now printed "ASR  -(An)"
                 
@@ -725,7 +788,7 @@ ASRMEMANPLUS    SUBI.B      #8,D5           ;sub 8 from D5 to get register value
                 
                 LEA         ASRMESSAGE,A1
                 MOVE.L      #14,D0
-                TRAP        #$15            ;have now printed "ASR"
+                TRAP        #15            ;have now printed "ASR"
                 LEA         DOUBLESPACE,A1      ;since mem shifts don't specify sizes, add the double space
                 TRAP        #15             ;have now printed "ASR  "
                 LEA         INDIRECTADAB,A1
@@ -761,14 +824,14 @@ ASLMEM          CLR.L       D6              ;clear D6
                 
                 LEA         ASLMESSAGE,A1
                 MOVE.L      #14,D0
-                TRAP        #$15            ;have now printed "ASL"
+                TRAP        #15            ;have now printed "ASL"
                 LEA         DOUBLESPACE,A1      ;since mem shifts don't specify sizes, add the double space
                 TRAP        #15             ;have now printed "ASL  "
                 LEA         INDIRECTADDECB,A1
                 TRAP        #15             ;have now printed "ASL  -(A"
                 MOVE.B      #3,D0
                 TRAP        #15             ; have now printed "ASL  -(An"
-                LEA         CLOSEPARENS,A1
+                LEA         CLOSEPAREN,A1
                 MOVE.B      #14,D0
                 TRAP        #15             ;have now printed "ASL  -(An)"
                 
@@ -787,14 +850,14 @@ ASLTHREED       CLR.B       D6              ;more D6 clearing
                 
                 LEA         ASLMESSAGE,A1
                 MOVE.L      #14,D0
-                TRAP        #$15            ;have now printed "ASL"
+                TRAP        #15            ;have now printed "ASL"
                 LEA         DOUBLESPACE,A1      ;since mem shifts don't specify sizes, add the double space
                 TRAP        #15             ;have now printed "ASL  "
                 LEA         INDIRECTADAB,A1
                 TRAP        #15             ;have now printed "ASL  -(A"
                 MOVE.B      #3,D0
                 TRAP        #15             ; have now printed "ASL  -(An"
-                LEA         CLOSEPARENS,A1
+                LEA         CLOSEPAREN,A1
                 MOVE.B      #14,D0
                 TRAP        #15             ;have now printed "ASL  -(An)"
                 
@@ -809,7 +872,7 @@ ASLMEMANPLUS    SUBI.B      #8,D5           ;sub 8 from D5 to get register value
                 
                 LEA         ASLMESSAGE,A1
                 MOVE.L      #14,D0
-                TRAP        #$15            ;have now printed "ASL"
+                TRAP        #15            ;have now printed "ASL"
                 LEA         DOUBLESPACE,A1      ;since mem shifts don't specify sizes, add the double space
                 TRAP        #15             ;have now printed "ASL  "
                 LEA         INDIRECTADAB,A1
@@ -845,14 +908,14 @@ LSRMEM          CLR.L       D6              ;clear D6
                 
                 LEA         LSRMESSAGE,A1
                 MOVE.L      #14,D0
-                TRAP        #$15            ;have now printed "LSR"
+                TRAP        #15            ;have now printed "LSR"
                 LEA         DOUBLESPACE,A1      ;since mem shifts don't specify sizes, add the double space
                 TRAP        #15             ;have now printed "LSR  "
                 LEA         INDIRECTADDECB,A1
                 TRAP        #15             ;have now printed "LSR  -(A"
                 MOVE.B      #3,D0
                 TRAP        #15             ; have now printed "LSR  -(An"
-                LEA         CLOSEPARENS,A1
+                LEA         CLOSEPAREN,A1
                 MOVE.B      #14,D0
                 TRAP        #15             ;have now printed "LSR  -(An)"
                 
@@ -871,14 +934,14 @@ LSRTHREED       CLR.B       D6              ;more D6 clearing
                 
                 LEA         LSRMESSAGE,A1
                 MOVE.L      #14,D0
-                TRAP        #$15            ;have now printed "LSR"
+                TRAP        #15            ;have now printed "LSR"
                 LEA         DOUBLESPACE,A1      ;since mem shifts don't specify sizes, add the double space
                 TRAP        #15             ;have now printed "LSR  "
                 LEA         INDIRECTADAB,A1
                 TRAP        #15             ;have now printed "LSR  -(A"
                 MOVE.B      #3,D0
                 TRAP        #15             ; have now printed "LSR  -(An"
-                LEA         CLOSEPARENS,A1
+                LEA         CLOSEPAREN,A1
                 MOVE.B      #14,D0
                 TRAP        #15             ;have now printed "LSR  -(An)"
                 
@@ -893,7 +956,7 @@ LSRMEMANPLUS    SUBI.B      #8,D5           ;sub 8 from D5 to get register value
                 
                 LEA         LSRMESSAGE,A1
                 MOVE.L      #14,D0
-                TRAP        #$15            ;have now printed "LSR"
+                TRAP        #15            ;have now printed "LSR"
                 LEA         DOUBLESPACE,A1      ;since mem shifts don't specify sizes, add the double space
                 TRAP        #15             ;have now printed "LSR  "
                 LEA         INDIRECTADAB,A1
@@ -930,14 +993,14 @@ LSLMEM          CLR.L       D6              ;clear D6
                 
                 LEA         LSLMESSAGE,A1
                 MOVE.L      #14,D0
-                TRAP        #$15            ;have now printed "LSL"
+                TRAP        #15            ;have now printed "LSL"
                 LEA         DOUBLESPACE,A1      ;since mem shifts don't specify sizes, add the double space
                 TRAP        #15             ;have now printed "LSL  "
                 LEA         INDIRECTADDECB,A1
                 TRAP        #15             ;have now printed "LSL  -(A"
                 MOVE.B      #3,D0
                 TRAP        #15             ; have now printed "LSL  -(An"
-                LEA         CLOSEPARENS,A1
+                LEA         CLOSEPAREN,A1
                 MOVE.B      #14,D0
                 TRAP        #15             ;have now printed "LSL  -(An)"
                 
@@ -956,14 +1019,14 @@ LSLTHREED       CLR.B       D6              ;more D6 clearing
                 
                 LEA         LSLMESSAGE,A1
                 MOVE.L      #14,D0
-                TRAP        #$15            ;have now printed "LSL"
+                TRAP        #15            ;have now printed "LSL"
                 LEA         DOUBLESPACE,A1      ;since mem shifts don't specify sizes, add the double space
                 TRAP        #15             ;have now printed "LSL  "
                 LEA         INDIRECTADAB,A1
                 TRAP        #15             ;have now printed "LSL  -(A"
                 MOVE.B      #3,D0
                 TRAP        #15             ; have now printed "LSL  -(An"
-                LEA         CLOSEPARENS,A1
+                LEA         CLOSEPAREN,A1
                 MOVE.B      #14,D0
                 TRAP        #15             ;have now printed "LSL  -(An)"
                 
@@ -978,7 +1041,7 @@ LSLMEMANPLUS    SUBI.B      #8,D5           ;sub 8 from D5 to get register value
                 
                 LEA         LSLMESSAGE,A1
                 MOVE.L      #14,D0
-                TRAP        #$15            ;have now printed "LSL"
+                TRAP        #15            ;have now printed "LSL"
                 LEA         DOUBLESPACE,A1      ;since mem shifts don't specify sizes, add the double space
                 TRAP        #15             ;have now printed "LSL  "
                 LEA         INDIRECTADAB,A1
@@ -1109,6 +1172,7 @@ NEWLINE         DC.L        '',CR           ;for making a newline
 DOUBLESPACE     DC.L        '  ',0          ;needed to make a double space in some circumstances 
 
                 END         START        ; last line of source
+
 
 
 
