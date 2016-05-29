@@ -22,7 +22,8 @@ START:          ORG         $1000      ; first instruction of program
                 LEA         TESTCODE,A2         ; load address of the testcode
                 
 *start the actual disassembly below
-LOOPSTART       MOVE.W      (A2)+,D5    ;move the current code into D5, then increment - this cant probably be changed so you just read (A1) and increment later.. but that's a case for optimizing
+LOOPSTART       CLR.L       D5              ;clear out D5 in prep for the next instruction's load
+                MOVE.W      (A2)+,D5    ;move the current code into D5, then increment - this cant probably be changed so you just read (A1) and increment later.. but that's a case for optimizing
 
 *Compare the testinput wth the NOP code
 *Need to change this to be a while there's still code... end of code should be 00000000 i think
@@ -688,20 +689,96 @@ ALSLRREGBYTE    CLR.L       D6
          *_SR.B D_
 ALSRBYTE        CLR.L       D6              ;clear D6 out
                 MOVE.B      D5,D6           ;move the last byte to D6
-                *now we know the 3rd nybble is either 0 or 2... kinda useless so shifting
                 LSL.B       #4,D6
                 CMPI.B      #$80,D6     ;if >= Arithmetic, if lower, Logical
                 BLT         LSRBYTE
+                BRA         ASRBYTE
         *Below two cases, it's for sure that instruction, so figure out if it's going to take a
          * register or immediate, based on the 3rd bit of the 3rd nybble. if it's 0 it's immediate, 1: data reg
-          *if immediate, 2nd nybble's first 3 bits determine the amount, with 0 meaning 8
-          *else if it's register, it determines which register
         *The final 3 bits of the last nybble determine the data reg being shifted.
 ASRBYTE         LEA         ASRMESSAGE,A1       ;start by printing the ASR.B since you know it's that
                 MOVE.L      #14,D0
                 TRAP        #15                 ;printed "ASR"
                 LEA         BYTEEND,A1
                 TRAP        #15                 ;printed "ASR.B  "
+                CLR.B       D6                  ;it was previously holding a modified D5 byte
+                MOVE.B      D5,D6               ;and now it'll hold a differently modified D5 byte
+                LSL.B       #2,D6               ;move the 3rd bit of the 3rd (1st) nybble to the front
+                ANDI.B      #$80,D6             ;clear out all data from D6 except the first bit
+                CMPI.B      #0,D6
+                BEQ         ASRBYTEIMM          ;if the result is 0, it's immediate shift, otherwise it's reg shift
+                BRA         ASRBYTEREG
+                
+            *if immediate, 2nd nybble's first 3 bits determine the amount to shift by, with 0 meaning 8    
+ASRBYTEIMM      CLR.B       D6
+                MOVE.W      D5,D6               ;move word of D5 into D6
+                LSR.W       #1,D6               ;move that 2nd nybble's value from first 3 bits to last 3 bits
+                LSR.W       #8,D6               ;move those bits to the end of the word
+                CLR.L       D4
+                MOVE.W      #$0007,D4           ;move a value you want to AND with D6 into D4
+                AND.W       D4,D6               ;after the AND, D6'll only have the number you want left within it
+                LEA         POUNDSIGN,A1        ;trap task #14 is still loaded
+                TRAP        #15                 ;have now printed "ASR.B  #"
+                CMPI.W      #0,D6               ;if D6 contains 0, replace it with 8
+                BNE         NOREPLACEASRBI      ;skip the below code if it's not 8
+                CLR.B       D6
+                MOVE.B      #$8,D6              ;add 8 to D6 because it used to contain 0
+NOREPLACEASRBI  MOVE.L      D6,D1               ;start doing the printing stuff, since if you needed to replace you did, if you didnt, you skipped that
+                MOVE.W      #3,D0               ;load up trap task 3
+                TRAP        #15                 ;have now printed "ASR.B  #n
+                LEA         COMMASPACE,A1
+                MOVE.L      #14,D0              ;load trap task 14 again
+                TRAP        #15                 ;have now printed "ASR.B  #n, "
+                LEA         DATAREG,A1
+                TRAP        #15                 ;have now printed "ASR.B  #n, D"
+                *next you have to get the data reg being shifted, which is determined by the last 3 bits of the instruction
+                CLR.B       D6                  ;back to our friend D6
+                MOVE.W      D5,D6
+                CLR.W       D4                  ;clear D4
+                MOVE.W      #$0007,D4           ;same logic as an above step
+                AND.W       D4,D6               ;after the AND, D6'll only have the number you want left within it
+                MOVE.L      D6,D1               ;move that value into D1 for tap task
+                MOVE.L      #3,D0
+                TRAP        #15                 ;have now printed "ASR.B  #n, Dn"
+                
+                MOVEM       (SP)+,D5        ;reload the stack
+                BRA         LOOPEND         ;go to next instruction
+                
+                
+            *2nd nybbles first 3 bits determine data register value containing the shift
+ASRBYTEREG      CLR.B       D6              ;remember you've already printed "ASR.B  " by this point
+                MOVE.W      D5,D6           ;now you need to check the first 3 bits of the second nybble
+                LSR.W       #1,D6               ;move that 2nd nybble's value from first 3 bits to last 3 bits
+                LSR.W       #8,D6               ;move those bits to the end of the word
+                CLR.L       D4
+                MOVE.W      #$0007,D4           ;move a value you want to AND with D6 into D4
+                AND.W       D4,D6               ;after the AND, D6'll only have the number you want left within it
+                LEA         DATAREG,A1
+                MOVE.L      #14,D0
+                TRAP        #15                 ;have now printed "ASR.B  D"
+                CLR.L       D1
+                MOVE.W      D6,D1
+                MOVE.L      #3,D0
+                TRAP        #15                 ;have now printed ASR.B  Dn
+                LEA         COMMASPACE,A1
+                MOVE.L      #14,D0              ;load trap task 14 again
+                TRAP        #15                 ;have now printed "ASR.B  Dn, "
+                LEA         DATAREG,A1
+                TRAP        #15                 ;have now printed "ASR.B  Dn, D"
+                *next you have to get the data reg being shifted, which is determined by the last 3 bits of the instruction
+                CLR.B       D6                  ;back to our friend D6
+                MOVE.W      D5,D6
+                CLR.W       D4                  ;clear D4
+                MOVE.W      #$0007,D4           ;same logic as an above step
+                AND.W       D4,D6               ;after the AND, D6'll only have the number you want left within it
+                MOVE.L      D6,D1               ;move that value into D1 for tap task
+                MOVE.L      #3,D0
+                TRAP        #15                 ;have now printed "ASR.B  Dn, Dn"
+                
+                MOVEM       (SP)+,D5        ;reload the stack
+                BRA         LOOPEND         ;go to next instruction
+
+
                 
                 
 LSRBYTE         LEA         LSRMESSAGE,A1       ;start by printing the LSR.B since you know it's that
@@ -709,14 +786,999 @@ LSRBYTE         LEA         LSRMESSAGE,A1       ;start by printing the LSR.B sin
                 TRAP        #15                 ;printed "LSR"
                 LEA         BYTEEND,A1
                 TRAP        #15                 ;printed "LSR.B  "
+                CLR.B       D6                  ;it was previously holding a modified D5 byte
+                MOVE.B      D5,D6               ;and now it'll hold a differently modified D5 byte
+                LSL.B       #2,D6               ;move the 3rd bit of the 3rd (1st) nybble to the front
+                ANDI.B      #$80,D6             ;clear out all data from D6 except the first bit
+                CMPI.B      #0,D6
+                BEQ         LSRBYTEIMM          ;if the result is 0, it's immediate shift, otherwise it's reg shift
+                BRA         LSRBYTEREG
+                
+            *if immediate, 2nd nybble's first 3 bits determine the amount to shift by, with 0 meaning 8    
+LSRBYTEIMM      CLR.B       D6
+                MOVE.W      D5,D6               ;move word of D5 into D6
+                LSR.W       #1,D6               ;move that 2nd nybble's value from first 3 bits to last 3 bits
+                LSR.W       #8,D6               ;move those bits to the end of the word
+                CLR.L       D4
+                MOVE.W      #$0007,D4           ;move a value you want to AND with D6 into D4
+                AND.W       D4,D6               ;after the AND, D6'll only have the number you want left within it
+                LEA         POUNDSIGN,A1        ;trap task #14 is still loaded
+                TRAP        #15                 ;have now printed "LSR.B  #"
+                CMPI.W      #0,D6               ;if D6 contains 0, replace it with 8
+                BNE         NOREPLACELSRBI      ;skip the below code if it's not 8
+                CLR.B       D6
+                MOVE.B      #$8,D6              ;add 8 to D6 because it used to contain 0
+NOREPLACELSRBI  MOVE.L      D6,D1               ;start doing the printing stuff, since if you needed to replace you did, if you didnt, you skipped that
+                MOVE.W      #3,D0               ;load up trap task 3
+                TRAP        #15                 ;have now printed "LSR.B  #n
+                LEA         COMMASPACE,A1
+                MOVE.L      #14,D0              ;load trap task 14 again
+                TRAP        #15                 ;have now printed "LSR.B  #n, "
+                LEA         DATAREG,A1
+                TRAP        #15                 ;have now printed "LSR.B  #n, D"
+                *next you have to get the data reg being shifted, which is determined by the last 3 bits of the instruction
+                CLR.B       D6                  ;back to our friend D6
+                MOVE.W      D5,D6
+                CLR.W       D4                  ;clear D4
+                MOVE.W      #$0007,D4           ;same logic as an above step
+                AND.W       D4,D6               ;after the AND, D6'll only have the number you want left within it
+                MOVE.L      D6,D1               ;move that value into D1 for tap task
+                MOVE.L      #3,D0
+                TRAP        #15                 ;have now printed "LSR.B  #n, Dn"
+                
+                MOVEM       (SP)+,D5        ;reload the stack
+                BRA         LOOPEND         ;go to next instruction
+                
+                
+            *2nd nybbles first 3 bits determine data register value containing the shift
+LSRBYTEREG      CLR.B       D6              ;remember you've already printed "LSR.B  " by this point
+                MOVE.W      D5,D6           ;now you need to check the first 3 bits of the second nybble
+                LSR.W       #1,D6               ;move that 2nd nybble's value from first 3 bits to last 3 bits
+                LSR.W       #8,D6               ;move those bits to the end of the word
+                CLR.L       D4
+                MOVE.W      #$0007,D4           ;move a value you want to AND with D6 into D4
+                AND.W       D4,D6               ;after the AND, D6'll only have the number you want left within it
+                LEA         DATAREG,A1
+                MOVE.L      #14,D0
+                TRAP        #15                 ;have now printed "LSR.B  D"
+                CLR.L       D1
+                MOVE.W      D6,D1
+                MOVE.L      #3,D0
+                TRAP        #15                 ;have now printed LSR.B  Dn
+                LEA         COMMASPACE,A1
+                MOVE.L      #14,D0              ;load trap task 14 again
+                TRAP        #15                 ;have now printed "LSR.B  Dn, "
+                LEA         DATAREG,A1
+                TRAP        #15                 ;have now printed "LSR.B  Dn, D"
+                *next you have to get the data reg being shifted, which is determined by the last 3 bits of the instruction
+                CLR.B       D6                  ;back to our friend D6
+                MOVE.W      D5,D6
+                CLR.W       D4                  ;clear D4
+                MOVE.W      #$0007,D4           ;same logic as an above step
+                AND.W       D4,D6               ;after the AND, D6'll only have the number you want left within it
+                MOVE.L      D6,D1               ;move that value into D1 for tap task
+                MOVE.L      #3,D0
+                TRAP        #15                 ;have now printed "LSR.B  Dn, Dn"
+                
+                MOVEM       (SP)+,D5        ;reload the stack
+                BRA         LOOPEND         ;go to next instruction
                 
         *_SL.B D_   
-ALSLBYTE            
+ALSLBYTE        CLR.L       D6              ;clear D6 out
+                MOVE.B      D5,D6           ;move the last byte to D6
+                LSL.B       #4,D6
+                CMPI.B      #$80,D6     ;if >= Arithmetic, if lower, Logical
+                BLT         LSLBYTE
+                BRA         ASLBYTE
+        *Below two cases, it's for sure that instruction, so figure out if it's going to take a
+         * register or immediate, based on the 3rd bit of the 3rd nybble. if it's 0 it's immediate, 1: data reg
+        *The final 3 bits of the last nybble determine the data reg being shifted.
+ASLBYTE         LEA         ASLMESSAGE,A1       ;start by printing the ASL.B since you know it's that
+                MOVE.L      #14,D0
+                TRAP        #15                 ;printed "ASL"
+                LEA         BYTEEND,A1
+                TRAP        #15                 ;printed "ASL.B  "
+                CLR.B       D6                  ;it was previously holding a modified D5 byte
+                MOVE.B      D5,D6               ;and now it'll hold a differently modified D5 byte
+                LSL.B       #2,D6               ;move the 3rd bit of the 3rd (1st) nybble to the front
+                ANDI.B      #$80,D6             ;clear out all data from D6 except the first bit
+                CMPI.B      #0,D6
+                BEQ         ASLBYTEIMM          ;if the result is 0, it's immediate shift, otherwise it's reg shift
+                BRA         ASLBYTEREG
+                
+            *if immediate, 2nd nybble's first 3 bits determine the amount to shift by, with 0 meaning 8    
+ASLBYTEIMM      CLR.B       D6
+                MOVE.W      D5,D6               ;move word of D5 into D6
+                LSR.W       #1,D6               ;move that 2nd nybble's value from first 3 bits to last 3 bits
+                LSR.W       #8,D6               ;move those bits to the end of the word
+                CLR.L       D4
+                MOVE.W      #$0007,D4           ;move a value you want to AND with D6 into D4
+                AND.W       D4,D6               ;after the AND, D6'll only have the number you want left within it
+                LEA         POUNDSIGN,A1        ;trap task #14 is still loaded
+                TRAP        #15                 ;have now printed "ASL.B  #"
+                CMPI.W      #0,D6               ;if D6 contains 0, replace it with 8
+                BNE         NOREPLACEASLBI      ;skip the below code if it's not 8
+                CLR.B       D6
+                MOVE.B      #$8,D6              ;add 8 to D6 because it used to contain 0
+NOREPLACEASLBI  MOVE.L      D6,D1               ;start doing the printing stuff, since if you needed to replace you did, if you didnt, you skipped that
+                MOVE.W      #3,D0               ;load up trap task 3
+                TRAP        #15                 ;have now printed "ASL.B  #n
+                LEA         COMMASPACE,A1
+                MOVE.L      #14,D0              ;load trap task 14 again
+                TRAP        #15                 ;have now printed "ASL.B  #n, "
+                LEA         DATAREG,A1
+                TRAP        #15                 ;have now printed "ASL.B  #n, D"
+                *next you have to get the data reg being shifted, which is determined by the last 3 bits of the instruction
+                CLR.B       D6                  ;back to our friend D6
+                MOVE.W      D5,D6
+                CLR.W       D4                  ;clear D4
+                MOVE.W      #$0007,D4           ;same logic as an above step
+                AND.W       D4,D6               ;after the AND, D6'll only have the number you want left within it
+                MOVE.L      D6,D1               ;move that value into D1 for tap task
+                MOVE.L      #3,D0
+                TRAP        #15                 ;have now printed "ASL.B  #n, Dn"
+                
+                MOVEM       (SP)+,D5        ;reload the stack
+                BRA         LOOPEND         ;go to next instruction
+                
+                
+            *2nd nybbles first 3 bits determine data register value containing the shift
+ASLBYTEREG      CLR.B       D6              ;remember you've already printed "ASL.B  " by this point
+                MOVE.W      D5,D6           ;now you need to check the first 3 bits of the second nybble
+                LSR.W       #1,D6               ;move that 2nd nybble's value from first 3 bits to last 3 bits
+                LSR.W       #8,D6               ;move those bits to the end of the word
+                CLR.L       D4
+                MOVE.W      #$0007,D4           ;move a value you want to AND with D6 into D4
+                AND.W       D4,D6               ;after the AND, D6'll only have the number you want left within it
+                LEA         DATAREG,A1
+                MOVE.L      #14,D0
+                TRAP        #15                 ;have now printed "ASL.B  D"
+                CLR.L       D1
+                MOVE.W      D6,D1
+                MOVE.L      #3,D0
+                TRAP        #15                 ;have now printed ASL.B  Dn
+                LEA         COMMASPACE,A1
+                MOVE.L      #14,D0              ;load trap task 14 again
+                TRAP        #15                 ;have now printed "ASL.B  Dn, "
+                LEA         DATAREG,A1
+                TRAP        #15                 ;have now printed "ASL.B  Dn, D"
+                *next you have to get the data reg being shifted, which is determined by the last 3 bits of the instruction
+                CLR.B       D6                  ;back to our friend D6
+                MOVE.W      D5,D6
+                CLR.W       D4                  ;clear D4
+                MOVE.W      #$0007,D4           ;same logic as an above step
+                AND.W       D4,D6               ;after the AND, D6'll only have the number you want left within it
+                MOVE.L      D6,D1               ;move that value into D1 for tap task
+                MOVE.L      #3,D0
+                TRAP        #15                 ;have now printed "ASL.B  Dn, Dn"
+                
+                MOVEM       (SP)+,D5        ;reload the stack
+                BRA         LOOPEND         ;go to next instruction
+
+
+                
+                
+LSLBYTE         LEA         LSLMESSAGE,A1       ;start by printing the LSL.B since you know it's that
+                MOVE.L      #14,D0
+                TRAP        #15                 ;printed "LSL"
+                LEA         BYTEEND,A1
+                TRAP        #15                 ;printed "LSL.B  "
+                CLR.B       D6                  ;it was previously holding a modified D5 byte
+                MOVE.B      D5,D6               ;and now it'll hold a differently modified D5 byte
+                LSL.B       #2,D6               ;move the 3rd bit of the 3rd (1st) nybble to the front
+                ANDI.B      #$80,D6             ;clear out all data from D6 except the first bit
+                CMPI.B      #0,D6
+                BEQ         LSLBYTEIMM          ;if the result is 0, it's immediate shift, otherwise it's reg shift
+                BRA         LSLBYTEREG
+                
+            *if immediate, 2nd nybble's first 3 bits determine the amount to shift by, with 0 meaning 8    
+LSLBYTEIMM      CLR.B       D6
+                MOVE.W      D5,D6               ;move word of D5 into D6
+                LSR.W       #1,D6               ;move that 2nd nybble's value from first 3 bits to last 3 bits
+                LSR.W       #8,D6               ;move those bits to the end of the word
+                CLR.L       D4
+                MOVE.W      #$0007,D4           ;move a value you want to AND with D6 into D4
+                AND.W       D4,D6               ;after the AND, D6'll only have the number you want left within it
+                LEA         POUNDSIGN,A1        ;trap task #14 is still loaded
+                TRAP        #15                 ;have now printed "LSL.B  #"
+                CMPI.W      #0,D6               ;if D6 contains 0, replace it with 8
+                BNE         NOREPLACELSRBI      ;skip the below code if it's not 8
+                CLR.B       D6
+                MOVE.B      #$8,D6              ;add 8 to D6 because it used to contain 0
+NOREPLACELSLBI  MOVE.L      D6,D1               ;start doing the printing stuff, since if you needed to replace you did, if you didnt, you skipped that
+                MOVE.W      #3,D0               ;load up trap task 3
+                TRAP        #15                 ;have now printed "LSL.B  #n
+                LEA         COMMASPACE,A1
+                MOVE.L      #14,D0              ;load trap task 14 again
+                TRAP        #15                 ;have now printed "LSL.B  #n, "
+                LEA         DATAREG,A1
+                TRAP        #15                 ;have now printed "LSL.B  #n, D"
+                *next you have to get the data reg being shifted, which is determined by the last 3 bits of the instruction
+                CLR.B       D6                  ;back to our friend D6
+                MOVE.W      D5,D6
+                CLR.W       D4                  ;clear D4
+                MOVE.W      #$0007,D4           ;same logic as an above step
+                AND.W       D4,D6               ;after the AND, D6'll only have the number you want left within it
+                MOVE.L      D6,D1               ;move that value into D1 for tap task
+                MOVE.L      #3,D0
+                TRAP        #15                 ;have now printed "LSL.B  #n, Dn"
+                
+                MOVEM       (SP)+,D5        ;reload the stack
+                BRA         LOOPEND         ;go to next instruction
+                
+                
+            *2nd nybbles first 3 bits determine data register value containing the shift
+LSLBYTEREG      CLR.B       D6              ;remember you've already printed "LSL.B  " by this point
+                MOVE.W      D5,D6           ;now you need to check the first 3 bits of the second nybble
+                LSR.W       #1,D6               ;move that 2nd nybble's value from first 3 bits to last 3 bits
+                LSR.W       #8,D6               ;move those bits to the end of the word
+                CLR.L       D4
+                MOVE.W      #$0007,D4           ;move a value you want to AND with D6 into D4
+                AND.W       D4,D6               ;after the AND, D6'll only have the number you want left within it
+                LEA         DATAREG,A1
+                MOVE.L      #14,D0
+                TRAP        #15                 ;have now printed "LSL.B  D"
+                CLR.L       D1
+                MOVE.W      D6,D1
+                MOVE.L      #3,D0
+                TRAP        #15                 ;have now printed LSL.B  Dn
+                LEA         COMMASPACE,A1
+                MOVE.L      #14,D0              ;load trap task 14 again
+                TRAP        #15                 ;have now printed "LSL.B  Dn, "
+                LEA         DATAREG,A1
+                TRAP        #15                 ;have now printed "LSL.B  Dn, D"
+                *next you have to get the data reg being shifted, which is determined by the last 3 bits of the instruction
+                CLR.B       D6                  ;back to our friend D6
+                MOVE.W      D5,D6
+                CLR.W       D4                  ;clear D4
+                MOVE.W      #$0007,D4           ;same logic as an above step
+                AND.W       D4,D6               ;after the AND, D6'll only have the number you want left within it
+                MOVE.L      D6,D1               ;move that value into D1 for tap task
+                MOVE.L      #3,D0
+                TRAP        #15                 ;have now printed "LSL.B  Dn, Dn"
+                
+                MOVEM       (SP)+,D5        ;reload the stack
+                BRA         LOOPEND         ;go to next instruction
 
 *eveyrthing above this can work for the below cases, just need to change what's being printed I think    
-ALSLRREGWORD
-ALSLRREGLONG
+            *For the next cases, we need to determine the direction of the shift, then the register shifted
+                *if the second nybble is even, it's a Right Shift, if it's odd, it's a Left Shift                 
+ALSLRREGWORD    CLR.L       D6
+                MOVE.W      D5,D6           ;using similar logic to before, let's check if second nybble is even or odd 
+                LSL.W       #7,D6
+                ANDI.W      #$8000,D6
+                CMP         #0,D6
+                BEQ         ALSRWORD        ;if it's even (=0), then it's either ASR or LSR
+                BRA         ALSLWORD        ;Otherwise it's ASL or LSL
+                
+                *next is to determine if it's a Arithmetic or Logical shift
+                *if the final nybble is 0-7, it's Logical, otherwise Arithmetic
+         *_SR.B D_
+ALSRWORD        CLR.L       D6              ;clear D6 out
+                MOVE.B      D5,D6           ;move the last byte to D6
+                LSL.B       #4,D6
+                CMPI.B      #$80,D6     ;if >= Arithmetic, if lower, Logical
+                BLT         LSRWORD
+                BRA         ASRWORD
+        *Below two cases, it's for sure that instruction, so figure out if it's going to take a
+         * register or immediate, based on the 3rd bit of the 3rd nybble. if it's 0 it's immediate, 1: data reg
+        *The final 3 bits of the last nybble determine the data reg being shifted.
+ASRWORD         LEA         ASRMESSAGE,A1       ;start by printing the ASR.W since you know it's that
+                MOVE.L      #14,D0
+                TRAP        #15                 ;printed "ASR"
+                LEA         WORDEND,A1
+                TRAP        #15                 ;printed "ASR.W  "
+                CLR.B       D6                  ;it was previously holding a modified D5 byte
+                MOVE.B      D5,D6               ;and now it'll hold a differently modified D5 byte
+                LSL.B       #2,D6               ;move the 3rd bit of the 3rd (1st) nybble to the front
+                ANDI.B      #$80,D6             ;clear out all data from D6 except the first bit
+                CMPI.B      #0,D6
+                BEQ         ASRWORDIMM          ;if the result is 0, it's immediate shift, otherwise it's reg shift
+                BRA         ASRWORDREG
+                
+            *if immediate, 2nd nybble's first 3 bits determine the amount to shift by, with 0 meaning 8    
+ASRWORDIMM      CLR.B       D6
+                MOVE.W      D5,D6               ;move word of D5 into D6
+                LSR.W       #1,D6               ;move that 2nd nybble's value from first 3 bits to last 3 bits
+                LSR.W       #8,D6               ;move those bits to the end of the word
+                CLR.L       D4
+                MOVE.W      #$0007,D4           ;move a value you want to AND with D6 into D4
+                AND.W       D4,D6               ;after the AND, D6'll only have the number you want left within it
+                LEA         POUNDSIGN,A1        ;trap task #14 is still loaded
+                TRAP        #15                 ;have now printed "ASR.W  #"
+                CMPI.W      #0,D6               ;if D6 contains 0, replace it with 8
+                BNE         NOREPLACEASRWI      ;skip the below code if it's not 8
+                CLR.B       D6
+                MOVE.B      #$8,D6              ;add 8 to D6 because it used to contain 0
+NOREPLACEASRWI  MOVE.L      D6,D1               ;start doing the printing stuff, since if you needed to replace you did, if you didnt, you skipped that
+                MOVE.W      #3,D0               ;load up trap task 3
+                TRAP        #15                 ;have now printed "ASR.W  #n
+                LEA         COMMASPACE,A1
+                MOVE.L      #14,D0              ;load trap task 14 again
+                TRAP        #15                 ;have now printed "ASR.W  #n, "
+                LEA         DATAREG,A1
+                TRAP        #15                 ;have now printed "ASR.W  #n, D"
+                *next you have to get the data reg being shifted, which is determined by the last 3 bits of the instruction
+                CLR.B       D6                  ;back to our friend D6
+                MOVE.W      D5,D6
+                CLR.W       D4                  ;clear D4
+                MOVE.W      #$0007,D4           ;same logic as an above step
+                AND.W       D4,D6               ;after the AND, D6'll only have the number you want left within it
+                MOVE.L      D6,D1               ;move that value into D1 for tap task
+                MOVE.L      #3,D0
+                TRAP        #15                 ;have now printed "ASR.W  #n, Dn"
+                
+                MOVEM       (SP)+,D5        ;reload the stack
+                BRA         LOOPEND         ;go to next instruction
+                
+                
+            *2nd nybbles first 3 bits determine data register value containing the shift
+ASRWORDREG      CLR.B       D6              ;remember you've already printed "ASR.W  " by this point
+                MOVE.W      D5,D6           ;now you need to check the first 3 bits of the second nybble
+                LSR.W       #1,D6               ;move that 2nd nybble's value from first 3 bits to last 3 bits
+                LSR.W       #8,D6               ;move those bits to the end of the word
+                CLR.L       D4
+                MOVE.W      #$0007,D4           ;move a value you want to AND with D6 into D4
+                AND.W       D4,D6               ;after the AND, D6'll only have the number you want left within it
+                LEA         DATAREG,A1
+                MOVE.L      #14,D0
+                TRAP        #15                 ;have now printed "ASR.W  D"
+                CLR.L       D1
+                MOVE.W      D6,D1
+                MOVE.L      #3,D0
+                TRAP        #15                 ;have now printed ASR.W  Dn
+                LEA         COMMASPACE,A1
+                MOVE.L      #14,D0              ;load trap task 14 again
+                TRAP        #15                 ;have now printed "ASR.W  Dn, "
+                LEA         DATAREG,A1
+                TRAP        #15                 ;have now printed "ASR.W  Dn, D"
+                *next you have to get the data reg being shifted, which is determined by the last 3 bits of the instruction
+                CLR.B       D6                  ;back to our friend D6
+                MOVE.W      D5,D6
+                CLR.W       D4                  ;clear D4
+                MOVE.W      #$0007,D4           ;same logic as an above step
+                AND.W       D4,D6               ;after the AND, D6'll only have the number you want left within it
+                MOVE.L      D6,D1               ;move that value into D1 for tap task
+                MOVE.L      #3,D0
+                TRAP        #15                 ;have now printed "ASR.W  Dn, Dn"
+                
+                MOVEM       (SP)+,D5        ;reload the stack
+                BRA         LOOPEND         ;go to next instruction
 
+
+                
+                
+LSRWORD         LEA         LSRMESSAGE,A1       ;start by printing the LSR.W since you know it's that
+                MOVE.L      #14,D0
+                TRAP        #15                 ;printed "LSR"
+                LEA         WORDEND,A1
+                TRAP        #15                 ;printed "LSR.W  "
+                CLR.B       D6                  ;it was previously holding a modified D5 byte
+                MOVE.B      D5,D6               ;and now it'll hold a differently modified D5 byte
+                LSL.B       #2,D6               ;move the 3rd bit of the 3rd (1st) nybble to the front
+                ANDI.B      #$80,D6             ;clear out all data from D6 except the first bit
+                CMPI.B      #0,D6
+                BEQ         LSRWORDIMM          ;if the result is 0, it's immediate shift, otherwise it's reg shift
+                BRA         LSRWORDREG
+                
+            *if immediate, 2nd nybble's first 3 bits determine the amount to shift by, with 0 meaning 8    
+LSRWORDIMM      CLR.B       D6
+                MOVE.W      D5,D6               ;move word of D5 into D6
+                LSR.W       #1,D6               ;move that 2nd nybble's value from first 3 bits to last 3 bits
+                LSR.W       #8,D6               ;move those bits to the end of the word
+                CLR.L       D4
+                MOVE.W      #$0007,D4           ;move a value you want to AND with D6 into D4
+                AND.W       D4,D6               ;after the AND, D6'll only have the number you want left within it
+                LEA         POUNDSIGN,A1        ;trap task #14 is still loaded
+                TRAP        #15                 ;have now printed "LSR.W  #"
+                CMPI.W      #0,D6               ;if D6 contains 0, replace it with 8
+                BNE         NOREPLACELSRWI      ;skip the below code if it's not 8
+                CLR.B       D6
+                MOVE.B      #$8,D6              ;add 8 to D6 because it used to contain 0
+NOREPLACELSRWI  MOVE.L      D6,D1               ;start doing the printing stuff, since if you needed to replace you did, if you didnt, you skipped that
+                MOVE.W      #3,D0               ;load up trap task 3
+                TRAP        #15                 ;have now printed "LSR.W  #n
+                LEA         COMMASPACE,A1
+                MOVE.L      #14,D0              ;load trap task 14 again
+                TRAP        #15                 ;have now printed "LSR.W  #n, "
+                LEA         DATAREG,A1
+                TRAP        #15                 ;have now printed "LSR.W  #n, D"
+                *next you have to get the data reg being shifted, which is determined by the last 3 bits of the instruction
+                CLR.B       D6                  ;back to our friend D6
+                MOVE.W      D5,D6
+                CLR.W       D4                  ;clear D4
+                MOVE.W      #$0007,D4           ;same logic as an above step
+                AND.W       D4,D6               ;after the AND, D6'll only have the number you want left within it
+                MOVE.L      D6,D1               ;move that value into D1 for tap task
+                MOVE.L      #3,D0
+                TRAP        #15                 ;have now printed "LSR.W  #n, Dn"
+                
+                MOVEM       (SP)+,D5        ;reload the stack
+                BRA         LOOPEND         ;go to next instruction
+                
+                
+            *2nd nybbles first 3 bits determine data register value containing the shift
+LSRWORDREG      CLR.B       D6              ;remember you've already printed "LSR.W  " by this point
+                MOVE.W      D5,D6           ;now you need to check the first 3 bits of the second nybble
+                LSR.W       #1,D6               ;move that 2nd nybble's value from first 3 bits to last 3 bits
+                LSR.W       #8,D6               ;move those bits to the end of the word
+                CLR.L       D4
+                MOVE.W      #$0007,D4           ;move a value you want to AND with D6 into D4
+                AND.W       D4,D6               ;after the AND, D6'll only have the number you want left within it
+                LEA         DATAREG,A1
+                MOVE.L      #14,D0
+                TRAP        #15                 ;have now printed "LSR.W  D"
+                CLR.L       D1
+                MOVE.W      D6,D1
+                MOVE.L      #3,D0
+                TRAP        #15                 ;have now printed LSR.W  Dn
+                LEA         COMMASPACE,A1
+                MOVE.L      #14,D0              ;load trap task 14 again
+                TRAP        #15                 ;have now printed "LSR.W  Dn, "
+                LEA         DATAREG,A1
+                TRAP        #15                 ;have now printed "LSR.W  Dn, D"
+                *next you have to get the data reg being shifted, which is determined by the last 3 bits of the instruction
+                CLR.B       D6                  ;back to our friend D6
+                MOVE.W      D5,D6
+                CLR.W       D4                  ;clear D4
+                MOVE.W      #$0007,D4           ;same logic as an above step
+                AND.W       D4,D6               ;after the AND, D6'll only have the number you want left within it
+                MOVE.L      D6,D1               ;move that value into D1 for tap task
+                MOVE.L      #3,D0
+                TRAP        #15                 ;have now printed "LSR.W  Dn, Dn"
+                
+                MOVEM       (SP)+,D5        ;reload the stack
+                BRA         LOOPEND         ;go to next instruction
+                
+        *_SL.W D_   
+ALSLWORD        CLR.L       D6              ;clear D6 out
+                MOVE.B      D5,D6           ;move the last byte to D6
+                LSL.B       #4,D6
+                CMPI.B      #$80,D6     ;if >= Arithmetic, if lower, Logical
+                BLT         LSLWORD
+                BRA         ASLWORD
+        *Below two cases, it's for sure that instruction, so figure out if it's going to take a
+         * register or immediate, based on the 3rd bit of the 3rd nybble. if it's 0 it's immediate, 1: data reg
+        *The final 3 bits of the last nybble determine the data reg being shifted.
+ASLWORD         LEA         ASLMESSAGE,A1       ;start by printing the ASL.W since you know it's that
+                MOVE.L      #14,D0
+                TRAP        #15                 ;printed "ASL"
+                LEA         WORDEND,A1
+                TRAP        #15                 ;printed "ASL.W  "
+                CLR.B       D6                  ;it was previously holding a modified D5 byte
+                MOVE.B      D5,D6               ;and now it'll hold a differently modified D5 byte
+                LSL.B       #2,D6               ;move the 3rd bit of the 3rd (1st) nybble to the front
+                ANDI.B      #$80,D6             ;clear out all data from D6 except the first bit
+                CMPI.B      #0,D6
+                BEQ         ASLWORDIMM          ;if the result is 0, it's immediate shift, otherwise it's reg shift
+                BRA         ASLWORDREG
+                
+            *if immediate, 2nd nybble's first 3 bits determine the amount to shift by, with 0 meaning 8    
+ASLWORDIMM      CLR.B       D6
+                MOVE.W      D5,D6               ;move word of D5 into D6
+                LSR.W       #1,D6               ;move that 2nd nybble's value from first 3 bits to last 3 bits
+                LSR.W       #8,D6               ;move those bits to the end of the word
+                CLR.L       D4
+                MOVE.W      #$0007,D4           ;move a value you want to AND with D6 into D4
+                AND.W       D4,D6               ;after the AND, D6'll only have the number you want left within it
+                LEA         POUNDSIGN,A1        ;trap task #14 is still loaded
+                TRAP        #15                 ;have now printed "ASL.W  #"
+                CMPI.W      #0,D6               ;if D6 contains 0, replace it with 8
+                BNE         NOREPLACEASLWI      ;skip the below code if it's not 8
+                CLR.B       D6
+                MOVE.B      #$8,D6              ;add 8 to D6 because it used to contain 0
+NOREPLACEASLWI  MOVE.L      D6,D1               ;start doing the printing stuff, since if you needed to replace you did, if you didnt, you skipped that
+                MOVE.W      #3,D0               ;load up trap task 3
+                TRAP        #15                 ;have now printed "ASL.W  #n
+                LEA         COMMASPACE,A1
+                MOVE.L      #14,D0              ;load trap task 14 again
+                TRAP        #15                 ;have now printed "ASL.W  #n, "
+                LEA         DATAREG,A1
+                TRAP        #15                 ;have now printed "ASL.W  #n, D"
+                *next you have to get the data reg being shifted, which is determined by the last 3 bits of the instruction
+                CLR.B       D6                  ;back to our friend D6
+                MOVE.W      D5,D6
+                CLR.W       D4                  ;clear D4
+                MOVE.W      #$0007,D4           ;same logic as an above step
+                AND.W       D4,D6               ;after the AND, D6'll only have the number you want left within it
+                MOVE.L      D6,D1               ;move that value into D1 for tap task
+                MOVE.L      #3,D0
+                TRAP        #15                 ;have now printed "ASL.W  #n, Dn"
+                
+                MOVEM       (SP)+,D5        ;reload the stack
+                BRA         LOOPEND         ;go to next instruction
+                
+                
+            *2nd nybbles first 3 bits determine data register value containing the shift
+ASLWORDREG      CLR.B       D6              ;remember you've already printed "ASL.W  " by this point
+                MOVE.W      D5,D6           ;now you need to check the first 3 bits of the second nybble
+                LSR.W       #1,D6               ;move that 2nd nybble's value from first 3 bits to last 3 bits
+                LSR.W       #8,D6               ;move those bits to the end of the word
+                CLR.L       D4
+                MOVE.W      #$0007,D4           ;move a value you want to AND with D6 into D4
+                AND.W       D4,D6               ;after the AND, D6'll only have the number you want left within it
+                LEA         DATAREG,A1
+                MOVE.L      #14,D0
+                TRAP        #15                 ;have now printed "ASL.W  D"
+                CLR.L       D1
+                MOVE.W      D6,D1
+                MOVE.L      #3,D0
+                TRAP        #15                 ;have now printed ASL.W  Dn
+                LEA         COMMASPACE,A1
+                MOVE.L      #14,D0              ;load trap task 14 again
+                TRAP        #15                 ;have now printed "ASL.W  Dn, "
+                LEA         DATAREG,A1
+                TRAP        #15                 ;have now printed "ASL.W  Dn, D"
+                *next you have to get the data reg being shifted, which is determined by the last 3 bits of the instruction
+                CLR.B       D6                  ;back to our friend D6
+                MOVE.W      D5,D6
+                CLR.W       D4                  ;clear D4
+                MOVE.W      #$0007,D4           ;same logic as an above step
+                AND.W       D4,D6               ;after the AND, D6'll only have the number you want left within it
+                MOVE.L      D6,D1               ;move that value into D1 for tap task
+                MOVE.L      #3,D0
+                TRAP        #15                 ;have now printed "ASL.W  Dn, Dn"
+                
+                MOVEM       (SP)+,D5        ;reload the stack
+                BRA         LOOPEND         ;go to next instruction
+
+
+                
+                
+LSLWORD         LEA         LSLMESSAGE,A1       ;start by printing the LSL.W since you know it's that
+                MOVE.L      #14,D0
+                TRAP        #15                 ;printed "LSL"
+                LEA         WORDEND,A1
+                TRAP        #15                 ;printed "LSL.W  "
+                CLR.B       D6                  ;it was previously holding a modified D5 byte
+                MOVE.B      D5,D6               ;and now it'll hold a differently modified D5 byte
+                LSL.B       #2,D6               ;move the 3rd bit of the 3rd (1st) nybble to the front
+                ANDI.B      #$80,D6             ;clear out all data from D6 except the first bit
+                CMPI.B      #0,D6
+                BEQ         LSLWORDIMM          ;if the result is 0, it's immediate shift, otherwise it's reg shift
+                BRA         LSLWORDREG
+                
+            *if immediate, 2nd nybble's first 3 bits determine the amount to shift by, with 0 meaning 8    
+LSLWORDIMM      CLR.B       D6
+                MOVE.W      D5,D6               ;move word of D5 into D6
+                LSR.W       #1,D6               ;move that 2nd nybble's value from first 3 bits to last 3 bits
+                LSR.W       #8,D6               ;move those bits to the end of the word
+                CLR.L       D4
+                MOVE.W      #$0007,D4           ;move a value you want to AND with D6 into D4
+                AND.W       D4,D6               ;after the AND, D6'll only have the number you want left within it
+                LEA         POUNDSIGN,A1        ;trap task #14 is still loaded
+                TRAP        #15                 ;have now printed "LSL.W  #"
+                CMPI.W      #0,D6               ;if D6 contains 0, replace it with 8
+                BNE         NOREPLACELSRWI      ;skip the below code if it's not 8
+                CLR.B       D6
+                MOVE.B      #$8,D6              ;add 8 to D6 because it used to contain 0
+NOREPLACELSLWI  MOVE.L      D6,D1               ;start doing the printing stuff, since if you needed to replace you did, if you didnt, you skipped that
+                MOVE.W      #3,D0               ;load up trap task 3
+                TRAP        #15                 ;have now printed "LSL.W  #n
+                LEA         COMMASPACE,A1
+                MOVE.L      #14,D0              ;load trap task 14 again
+                TRAP        #15                 ;have now printed "LSL.W  #n, "
+                LEA         DATAREG,A1
+                TRAP        #15                 ;have now printed "LSL.W  #n, D"
+                *next you have to get the data reg being shifted, which is determined by the last 3 bits of the instruction
+                CLR.B       D6                  ;back to our friend D6
+                MOVE.W      D5,D6
+                CLR.W       D4                  ;clear D4
+                MOVE.W      #$0007,D4           ;same logic as an above step
+                AND.W       D4,D6               ;after the AND, D6'll only have the number you want left within it
+                MOVE.L      D6,D1               ;move that value into D1 for tap task
+                MOVE.L      #3,D0
+                TRAP        #15                 ;have now printed "LSL.W  #n, Dn"
+                
+                MOVEM       (SP)+,D5        ;reload the stack
+                BRA         LOOPEND         ;go to next instruction
+                
+                
+            *2nd nybbles first 3 bits determine data register value containing the shift
+LSLWORDREG      CLR.B       D6              ;remember you've already printed "LSL.W  " by this point
+                MOVE.W      D5,D6           ;now you need to check the first 3 bits of the second nybble
+                LSR.W       #1,D6               ;move that 2nd nybble's value from first 3 bits to last 3 bits
+                LSR.W       #8,D6               ;move those bits to the end of the word
+                CLR.L       D4
+                MOVE.W      #$0007,D4           ;move a value you want to AND with D6 into D4
+                AND.W       D4,D6               ;after the AND, D6'll only have the number you want left within it
+                LEA         DATAREG,A1
+                MOVE.L      #14,D0
+                TRAP        #15                 ;have now printed "LSL.W  D"
+                CLR.L       D1
+                MOVE.W      D6,D1
+                MOVE.L      #3,D0
+                TRAP        #15                 ;have now printed LSL.W  Dn
+                LEA         COMMASPACE,A1
+                MOVE.L      #14,D0              ;load trap task 14 again
+                TRAP        #15                 ;have now printed "LSL.W  Dn, "
+                LEA         DATAREG,A1
+                TRAP        #15                 ;have now printed "LSL.W  Dn, D"
+                *next you have to get the data reg being shifted, which is determined by the last 3 bits of the instruction
+                CLR.B       D6                  ;back to our friend D6
+                MOVE.W      D5,D6
+                CLR.W       D4                  ;clear D4
+                MOVE.W      #$0007,D4           ;same logic as an above step
+                AND.W       D4,D6               ;after the AND, D6'll only have the number you want left within it
+                MOVE.L      D6,D1               ;move that value into D1 for tap task
+                MOVE.L      #3,D0
+                TRAP        #15                 ;have now printed "LSL.W  Dn, Dn"
+                
+                MOVEM       (SP)+,D5        ;reload the stack
+                BRA         LOOPEND         ;go to next instruction
+
+				
+			*Longs
+ALSLRREGLONG	CLR.L       D6
+                MOVE.W      D5,D6           ;using similar logic to before, let's check if second nybble is even or odd 
+                LSL.W       #7,D6
+                ANDI.W      #$8000,D6
+                CMP         #0,D6
+                BEQ         ALSRLONG        ;if it's even (=0), then it's either ASR or LSR
+                BRA         ALSLLONG        ;Otherwise it's ASL or LSL
+                
+                *next is to determine if it's a Arithmetic or Logical shift
+                *if the final nybble is 0-7, it's Logical, otherwise Arithmetic
+         *_SR.B D_
+ALSRLONG        CLR.L       D6              ;clear D6 out
+                MOVE.B      D5,D6           ;move the last byte to D6
+                LSL.B       #4,D6
+                CMPI.B      #$80,D6     ;if >= Arithmetic, if lower, Logical
+                BLT         LSRLONG
+                BRA         ASRLONG
+        *Below two cases, it's for sure that instruction, so figure out if it's going to take a
+         * register or immediate, based on the 3rd bit of the 3rd nybble. if it's 0 it's immediate, 1: data reg
+        *The final 3 bits of the last nybble determine the data reg being shifted.
+ASRLONG         LEA         ASRMESSAGE,A1       ;start by printing the ASR.L since you know it's that
+                MOVE.L      #14,D0
+                TRAP        #15                 ;printed "ASR"
+                LEA         LONGEND,A1
+                TRAP        #15                 ;printed "ASR.L  "
+                CLR.B       D6                  ;it was previously holding a modified D5 byte
+                MOVE.B      D5,D6               ;and now it'll hold a differently modified D5 byte
+                LSL.B       #2,D6               ;move the 3rd bit of the 3rd (1st) nybble to the front
+                ANDI.B      #$80,D6             ;clear out all data from D6 except the first bit
+                CMPI.B      #0,D6
+                BEQ         ASRLONGIMM          ;if the result is 0, it's immediate shift, otherwise it's reg shift
+                BRA         ASRLONGREG
+                
+            *if immediate, 2nd nybble's first 3 bits determine the amount to shift by, with 0 meaning 8    
+ASRLONGIMM      CLR.B       D6
+                MOVE.W      D5,D6               ;move word of D5 into D6
+                LSR.W       #1,D6               ;move that 2nd nybble's value from first 3 bits to last 3 bits
+                LSR.W       #8,D6               ;move those bits to the end of the word
+                CLR.L       D4
+                MOVE.W      #$0007,D4           ;move a value you want to AND with D6 into D4
+                AND.W       D4,D6               ;after the AND, D6'll only have the number you want left within it
+                LEA         POUNDSIGN,A1        ;trap task #14 is still loaded
+                TRAP        #15                 ;have now printed "ASR.L  #"
+                CMPI.W      #0,D6               ;if D6 contains 0, replace it with 8
+                BNE         NOREPLACEASRLI      ;skip the below code if it's not 8
+                CLR.B       D6
+                MOVE.B      #$8,D6              ;add 8 to D6 because it used to contain 0
+NOREPLACEASRLI  MOVE.L      D6,D1               ;start doing the printing stuff, since if you needed to replace you did, if you didnt, you skipped that
+                MOVE.W      #3,D0               ;load up trap task 3
+                TRAP        #15                 ;have now printed "ASR.L  #n
+                LEA         COMMASPACE,A1
+                MOVE.L      #14,D0              ;load trap task 14 again
+                TRAP        #15                 ;have now printed "ASR.L  #n, "
+                LEA         DATAREG,A1
+                TRAP        #15                 ;have now printed "ASR.L  #n, D"
+                *next you have to get the data reg being shifted, which is determined by the last 3 bits of the instruction
+                CLR.B       D6                  ;back to our friend D6
+                MOVE.W      D5,D6
+                CLR.W       D4                  ;clear D4
+                MOVE.W      #$0007,D4           ;same logic as an above step
+                AND.W       D4,D6               ;after the AND, D6'll only have the number you want left within it
+                MOVE.L      D6,D1               ;move that value into D1 for tap task
+                MOVE.L      #3,D0
+                TRAP        #15                 ;have now printed "ASR.L  #n, Dn"
+                
+                MOVEM       (SP)+,D5        ;reload the stack
+                BRA         LOOPEND         ;go to next instruction
+                
+                
+            *2nd nybbles first 3 bits determine data register value containing the shift
+ASRLONGREG      CLR.B       D6              ;remember you've already printed "ASR.L  " by this point
+                MOVE.W      D5,D6           ;now you need to check the first 3 bits of the second nybble
+                LSR.W       #1,D6               ;move that 2nd nybble's value from first 3 bits to last 3 bits
+                LSR.W       #8,D6               ;move those bits to the end of the word
+                CLR.L       D4
+                MOVE.W      #$0007,D4           ;move a value you want to AND with D6 into D4
+                AND.W       D4,D6               ;after the AND, D6'll only have the number you want left within it
+                LEA         DATAREG,A1
+                MOVE.L      #14,D0
+                TRAP        #15                 ;have now printed "ASR.L  D"
+                CLR.L       D1
+                MOVE.W      D6,D1
+                MOVE.L      #3,D0
+                TRAP        #15                 ;have now printed ASR.L  Dn
+                LEA         COMMASPACE,A1
+                MOVE.L      #14,D0              ;load trap task 14 again
+                TRAP        #15                 ;have now printed "ASR.L  Dn, "
+                LEA         DATAREG,A1
+                TRAP        #15                 ;have now printed "ASR.L  Dn, D"
+                *next you have to get the data reg being shifted, which is determined by the last 3 bits of the instruction
+                CLR.B       D6                  ;back to our friend D6
+                MOVE.W      D5,D6
+                CLR.W       D4                  ;clear D4
+                MOVE.W      #$0007,D4           ;same logic as an above step
+                AND.W       D4,D6               ;after the AND, D6'll only have the number you want left within it
+                MOVE.L      D6,D1               ;move that value into D1 for tap task
+                MOVE.L      #3,D0
+                TRAP        #15                 ;have now printed "ASR.L  Dn, Dn"
+                
+                MOVEM       (SP)+,D5        ;reload the stack
+                BRA         LOOPEND         ;go to next instruction
+
+
+                
+                
+LSRLONG         LEA         LSRMESSAGE,A1       ;start by printing the LSR.L since you know it's that
+                MOVE.L      #14,D0
+                TRAP        #15                 ;printed "LSR"
+                LEA         LONGEND,A1
+                TRAP        #15                 ;printed "LSR.L  "
+                CLR.B       D6                  ;it was previously holding a modified D5 byte
+                MOVE.B      D5,D6               ;and now it'll hold a differently modified D5 byte
+                LSL.B       #2,D6               ;move the 3rd bit of the 3rd (1st) nybble to the front
+                ANDI.B      #$80,D6             ;clear out all data from D6 except the first bit
+                CMPI.B      #0,D6
+                BEQ         LSRLONGIMM          ;if the result is 0, it's immediate shift, otherwise it's reg shift
+                BRA         LSRLONGREG
+                
+            *if immediate, 2nd nybble's first 3 bits determine the amount to shift by, with 0 meaning 8    
+LSRLONGIMM      CLR.B       D6
+                MOVE.W      D5,D6               ;move word of D5 into D6
+                LSR.W       #1,D6               ;move that 2nd nybble's value from first 3 bits to last 3 bits
+                LSR.W       #8,D6               ;move those bits to the end of the word
+                CLR.L       D4
+                MOVE.W      #$0007,D4           ;move a value you want to AND with D6 into D4
+                AND.W       D4,D6               ;after the AND, D6'll only have the number you want left within it
+                LEA         POUNDSIGN,A1        ;trap task #14 is still loaded
+                TRAP        #15                 ;have now printed "LSR.L  #"
+                CMPI.W      #0,D6               ;if D6 contains 0, replace it with 8
+                BNE         NOREPLACELSRLI      ;skip the below code if it's not 8
+                CLR.B       D6
+                MOVE.B      #$8,D6              ;add 8 to D6 because it used to contain 0
+NOREPLACELSRLI  MOVE.L      D6,D1               ;start doing the printing stuff, since if you needed to replace you did, if you didnt, you skipped that
+                MOVE.W      #3,D0               ;load up trap task 3
+                TRAP        #15                 ;have now printed "LSR.L  #n
+                LEA         COMMASPACE,A1
+                MOVE.L      #14,D0              ;load trap task 14 again
+                TRAP        #15                 ;have now printed "LSR.L  #n, "
+                LEA         DATAREG,A1
+                TRAP        #15                 ;have now printed "LSR.W  #n, D"
+                *next you have to get the data reg being shifted, which is determined by the last 3 bits of the instruction
+                CLR.B       D6                  ;back to our friend D6
+                MOVE.W      D5,D6
+                CLR.W       D4                  ;clear D4
+                MOVE.W      #$0007,D4           ;same logic as an above step
+                AND.W       D4,D6               ;after the AND, D6'll only have the number you want left within it
+                MOVE.L      D6,D1               ;move that value into D1 for tap task
+                MOVE.L      #3,D0
+                TRAP        #15                 ;have now printed "LSR.L  #n, Dn"
+                
+                MOVEM       (SP)+,D5        ;reload the stack
+                BRA         LOOPEND         ;go to next instruction
+                
+                
+            *2nd nybbles first 3 bits determine data register value containing the shift
+LSRLONGREG      CLR.B       D6              ;remember you've already printed "LSR.L  " by this point
+                MOVE.W      D5,D6           ;now you need to check the first 3 bits of the second nybble
+                LSR.W       #1,D6               ;move that 2nd nybble's value from first 3 bits to last 3 bits
+                LSR.W       #8,D6               ;move those bits to the end of the word
+                CLR.L       D4
+                MOVE.W      #$0007,D4           ;move a value you want to AND with D6 into D4
+                AND.W       D4,D6               ;after the AND, D6'll only have the number you want left within it
+                LEA         DATAREG,A1
+                MOVE.L      #14,D0
+                TRAP        #15                 ;have now printed "LSR.L  D"
+                CLR.L       D1
+                MOVE.W      D6,D1
+                MOVE.L      #3,D0
+                TRAP        #15                 ;have now printed LSR.L  Dn
+                LEA         COMMASPACE,A1
+                MOVE.L      #14,D0              ;load trap task 14 again
+                TRAP        #15                 ;have now printed "LSR.L  Dn, "
+                LEA         DATAREG,A1
+                TRAP        #15                 ;have now printed "LSR.L  Dn, D"
+                *next you have to get the data reg being shifted, which is determined by the last 3 bits of the instruction
+                CLR.B       D6                  ;back to our friend D6
+                MOVE.W      D5,D6
+                CLR.W       D4                  ;clear D4
+                MOVE.W      #$0007,D4           ;same logic as an above step
+                AND.W       D4,D6               ;after the AND, D6'll only have the number you want left within it
+                MOVE.L      D6,D1               ;move that value into D1 for tap task
+                MOVE.L      #3,D0
+                TRAP        #15                 ;have now printed "LSR.L  Dn, Dn"
+                
+                MOVEM       (SP)+,D5        ;reload the stack
+                BRA         LOOPEND         ;go to next instruction
+                
+        *_SL.L D_   
+ALSLLONG        CLR.L       D6              ;clear D6 out
+                MOVE.B      D5,D6           ;move the last byte to D6
+                LSL.B       #4,D6
+                CMPI.B      #$80,D6     ;if >= Arithmetic, if lower, Logical
+                BLT         LSLLONG
+                BRA         ASLLONG
+        *Below two cases, it's for sure that instruction, so figure out if it's going to take a
+         * register or immediate, based on the 3rd bit of the 3rd nybble. if it's 0 it's immediate, 1: data reg
+        *The final 3 bits of the last nybble determine the data reg being shifted.
+ASLLONG         LEA         ASLMESSAGE,A1       ;start by printing the ASL.L since you know it's that
+                MOVE.L      #14,D0
+                TRAP        #15                 ;printed "ASL"
+                LEA         LONGEND,A1
+                TRAP        #15                 ;printed "ASL.L  "
+                CLR.B       D6                  ;it was previously holding a modified D5 byte
+                MOVE.B      D5,D6               ;and now it'll hold a differently modified D5 byte
+                LSL.B       #2,D6               ;move the 3rd bit of the 3rd (1st) nybble to the front
+                ANDI.B      #$80,D6             ;clear out all data from D6 except the first bit
+                CMPI.B      #0,D6
+                BEQ         ASLLONGIMM          ;if the result is 0, it's immediate shift, otherwise it's reg shift
+                BRA         ASLLONGREG
+                
+            *if immediate, 2nd nybble's first 3 bits determine the amount to shift by, with 0 meaning 8    
+ASLLONGIMM      CLR.B       D6
+                MOVE.W      D5,D6               ;move word of D5 into D6
+                LSR.W       #1,D6               ;move that 2nd nybble's value from first 3 bits to last 3 bits
+                LSR.W       #8,D6               ;move those bits to the end of the word
+                CLR.L       D4
+                MOVE.W      #$0007,D4           ;move a value you want to AND with D6 into D4
+                AND.W       D4,D6               ;after the AND, D6'll only have the number you want left within it
+                LEA         POUNDSIGN,A1        ;trap task #14 is still loaded
+                TRAP        #15                 ;have now printed "ASL.L  #"
+                CMPI.W      #0,D6               ;if D6 contains 0, replace it with 8
+                BNE         NOREPLACEASLLI      ;skip the below code if it's not 8
+                CLR.B       D6
+                MOVE.B      #$8,D6              ;add 8 to D6 because it used to contain 0
+NOREPLACEASLLI  MOVE.L      D6,D1               ;start doing the printing stuff, since if you needed to replace you did, if you didnt, you skipped that
+                MOVE.W      #3,D0               ;load up trap task 3
+                TRAP        #15                 ;have now printed "ASL.L  #n
+                LEA         COMMASPACE,A1
+                MOVE.L      #14,D0              ;load trap task 14 again
+                TRAP        #15                 ;have now printed "ASL.L  #n, "
+                LEA         DATAREG,A1
+                TRAP        #15                 ;have now printed "ASL.L  #n, D"
+                *next you have to get the data reg being shifted, which is determined by the last 3 bits of the instruction
+                CLR.B       D6                  ;back to our friend D6
+                MOVE.W      D5,D6
+                CLR.W       D4                  ;clear D4
+                MOVE.W      #$0007,D4           ;same logic as an above step
+                AND.W       D4,D6               ;after the AND, D6'll only have the number you want left within it
+                MOVE.L      D6,D1               ;move that value into D1 for tap task
+                MOVE.L      #3,D0
+                TRAP        #15                 ;have now printed "ASL.L  #n, Dn"
+                
+                MOVEM       (SP)+,D5        ;reload the stack
+                BRA         LOOPEND         ;go to next instruction
+                
+                
+            *2nd nybbles first 3 bits determine data register value containing the shift
+ASLLONGREG      CLR.B       D6              ;remember you've already printed "ASL.L  " by this point
+                MOVE.W      D5,D6           ;now you need to check the first 3 bits of the second nybble
+                LSR.W       #1,D6               ;move that 2nd nybble's value from first 3 bits to last 3 bits
+                LSR.W       #8,D6               ;move those bits to the end of the word
+                CLR.L       D4
+                MOVE.W      #$0007,D4           ;move a value you want to AND with D6 into D4
+                AND.W       D4,D6               ;after the AND, D6'll only have the number you want left within it
+                LEA         DATAREG,A1
+                MOVE.L      #14,D0
+                TRAP        #15                 ;have now printed "ASL.L  D"
+                CLR.L       D1
+                MOVE.W      D6,D1
+                MOVE.L      #3,D0
+                TRAP        #15                 ;have now printed ASL.L  Dn
+                LEA         COMMASPACE,A1
+                MOVE.L      #14,D0              ;load trap task 14 again
+                TRAP        #15                 ;have now printed "ASL.L  Dn, "
+                LEA         DATAREG,A1
+                TRAP        #15                 ;have now printed "ASL.L  Dn, D"
+                *next you have to get the data reg being shifted, which is determined by the last 3 bits of the instruction
+                CLR.B       D6                  ;back to our friend D6
+                MOVE.W      D5,D6
+                CLR.W       D4                  ;clear D4
+                MOVE.W      #$0007,D4           ;same logic as an above step
+                AND.W       D4,D6               ;after the AND, D6'll only have the number you want left within it
+                MOVE.L      D6,D1               ;move that value into D1 for tap task
+                MOVE.L      #3,D0
+                TRAP        #15                 ;have now printed "ASL.L  Dn, Dn"
+                
+                MOVEM       (SP)+,D5        ;reload the stack
+                BRA         LOOPEND         ;go to next instruction
+
+
+                
+                
+LSLLONG         LEA         LSLMESSAGE,A1       ;start by printing the LSL.L since you know it's that
+                MOVE.L      #14,D0
+                TRAP        #15                 ;printed "LSL"
+                LEA         LONGEND,A1
+                TRAP        #15                 ;printed "LSL.L  "
+                CLR.B       D6                  ;it was previously holding a modified D5 byte
+                MOVE.B      D5,D6               ;and now it'll hold a differently modified D5 byte
+                LSL.B       #2,D6               ;move the 3rd bit of the 3rd (1st) nybble to the front
+                ANDI.B      #$80,D6             ;clear out all data from D6 except the first bit
+                CMPI.B      #0,D6
+                BEQ         LSLLONGIMM          ;if the result is 0, it's immediate shift, otherwise it's reg shift
+                BRA         LSLLONGREG
+                
+            *if immediate, 2nd nybble's first 3 bits determine the amount to shift by, with 0 meaning 8    
+LSLLONGIMM      CLR.B       D6
+                MOVE.W      D5,D6               ;move word of D5 into D6
+                LSR.W       #1,D6               ;move that 2nd nybble's value from first 3 bits to last 3 bits
+                LSR.W       #8,D6               ;move those bits to the end of the word
+                CLR.L       D4
+                MOVE.W      #$0007,D4           ;move a value you want to AND with D6 into D4
+                AND.W       D4,D6               ;after the AND, D6'll only have the number you want left within it
+                LEA         POUNDSIGN,A1        ;trap task #14 is still loaded
+                TRAP        #15                 ;have now printed "LSL.L  #"
+                CMPI.W      #0,D6               ;if D6 contains 0, replace it with 8
+                BNE         NOREPLACELSRLI      ;skip the below code if it's not 8
+                CLR.B       D6
+                MOVE.B      #$8,D6              ;add 8 to D6 because it used to contain 0
+NOREPLACELSLLI  MOVE.L      D6,D1               ;start doing the printing stuff, since if you needed to replace you did, if you didnt, you skipped that
+                MOVE.W      #3,D0               ;load up trap task 3
+                TRAP        #15                 ;have now printed "LSL.L  #n
+                LEA         COMMASPACE,A1
+                MOVE.L      #14,D0              ;load trap task 14 again
+                TRAP        #15                 ;have now printed "LSL.L  #n, "
+                LEA         DATAREG,A1
+                TRAP        #15                 ;have now printed "LSL.L  #n, D"
+                *next you have to get the data reg being shifted, which is determined by the last 3 bits of the instruction
+                CLR.B       D6                  ;back to our friend D6
+                MOVE.W      D5,D6
+                CLR.W       D4                  ;clear D4
+                MOVE.W      #$0007,D4           ;same logic as an above step
+                AND.W       D4,D6               ;after the AND, D6'll only have the number you want left within it
+                MOVE.L      D6,D1               ;move that value into D1 for tap task
+                MOVE.L      #3,D0
+                TRAP        #15                 ;have now printed "LSL.L  #n, Dn"
+                
+                MOVEM       (SP)+,D5        ;reload the stack
+                BRA         LOOPEND         ;go to next instruction
+                
+                
+            *2nd nybbles first 3 bits determine data register value containing the shift
+LSLLONGREG      CLR.B       D6              ;remember you've already printed "LSL.L  " by this point
+                MOVE.W      D5,D6           ;now you need to check the first 3 bits of the second nybble
+                LSR.W       #1,D6               ;move that 2nd nybble's value from first 3 bits to last 3 bits
+                LSR.W       #8,D6               ;move those bits to the end of the word
+                CLR.L       D4
+                MOVE.W      #$0007,D4           ;move a value you want to AND with D6 into D4
+                AND.W       D4,D6               ;after the AND, D6'll only have the number you want left within it
+                LEA         DATAREG,A1
+                MOVE.L      #14,D0
+                TRAP        #15                 ;have now printed "LSL.L  D"
+                CLR.L       D1
+                MOVE.W      D6,D1
+                MOVE.L      #3,D0
+                TRAP        #15                 ;have now printed LSL.L  Dn
+                LEA         COMMASPACE,A1
+                MOVE.L      #14,D0              ;load trap task 14 again
+                TRAP        #15                 ;have now printed "LSL.L  Dn, "
+                LEA         DATAREG,A1
+                TRAP        #15                 ;have now printed "LSL.L  Dn, D"
+                *next you have to get the data reg being shifted, which is determined by the last 3 bits of the instruction
+                CLR.B       D6                  ;back to our friend D6
+                MOVE.W      D5,D6
+                CLR.W       D4                  ;clear D4
+                MOVE.W      #$0007,D4           ;same logic as an above step
+                AND.W       D4,D6               ;after the AND, D6'll only have the number you want left within it
+                MOVE.L      D6,D1               ;move that value into D1 for tap task
+                MOVE.L      #3,D0
+                TRAP        #15                 ;have now printed "LSL.L  Dn, Dn"
+                
+                MOVEM       (SP)+,D5        ;reload the stack
+                BRA         LOOPEND         ;go to next instruction
+
+				
+				
+				
+				
+				
+				
 
         *Almost confirmed for all cases below to be that particular instruction, just need to parse out the EA mode and Reg
             *last 6 bits - last byte comparisions needed. Min value $D0, max value $E7
@@ -1090,12 +2152,11 @@ TESTCODE        *test for NOP below
                 *tests for JSR below
                 RTS
                 JSR         ENDCASE     ;honestly not sure which mode this tests. (xxx).L?
-                JSR         (A1)
+                JSR         (A1)        ;*****************************NEED TO FIX THIS***********************
                 JSR         $FFFFFFFF  ;maybe?
-                *still need more JSR tests
+                JSR         $FFFF
+                *still need more JSR tests?
                 
-                *test for RTS
-                RTS
                 
                 *Test for ASL, ASR, LSL, LSR
                 ASL.B       #1,D0           ;reg shift
@@ -1125,6 +2186,9 @@ TESTCODE        *test for NOP below
                 LSR         (A1)            ;mem shift
                 LSR         (A2)+           ;mem shift
                 LSR         -(A3)           ;mem shift
+                
+                *test for RTS
+                RTS
                 
 
 * Put variables and constants here
@@ -1160,6 +2224,8 @@ INCREMENTEND    DC.L        ')+',0          ;END of INCREMENT address line
 
 CLOSEPAREN      DC.L        ')',0           ;for closing Indirect Address normal and Decrement
 DOLLARSIGN      DC.L        '$',0           ;for absolute address stuff (xxx).w/l
+COMMASPACE      DC.L        ', ',0          ;for 2 argument instructions
+POUNDSIGN       DC.L        '#',0           ;for printing immediate values
 
 BYTEEND         DC.L        '.B  ',0          ;for instructions that are sized - this is a bite-sized one
 WORDEND         DC.L        '.W  ',0          ;same, but word
@@ -1172,6 +2238,10 @@ NEWLINE         DC.L        '',CR           ;for making a newline
 DOUBLESPACE     DC.L        '  ',0          ;needed to make a double space in some circumstances 
 
                 END         START        ; last line of source
+
+
+
+
 
 
 
