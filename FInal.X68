@@ -51,15 +51,15 @@ NEGCMP          CLR.L       D6          ;reset D6
                 MOVE.W      NEGSTARTBYTE,D6     ;move the starting byte into D6
                 ROL         #8,D6               ;rotate bytes so they're actually in the front, D6 is now 4400
                 CMP.W       D6,D5               ;compare the instrcution code to 4400
-                BLT         DATASTUFF           ;if D5 is less, it's not NEG
+                BLT         ALSLRCMP           ;if D5 is less, it's not NEG
                 CMPI.W      #$4500,D5
                 BLT         NEGCASE             ;if it's less than 4500, greater or equal to 4400, check neg
                 
                 *ASL/ASR/LSL/LSR starts with $E
 ALSLRCMP        CLR.L       D6          ;reset D6
                 MOVE.W      #ALSRLSTARTNYBLE,D6     ;move the starting nybble into D6
-                ROL         #8,D6                   ;do max rotation
-                ROL         #4,D6                   ;do another rotation such that you have $E000
+                LSL         #8,D6                   ;do max rotation
+                LSL         #4,D6                   ;do another rotation such that you have $E000
                 MOVEM       D5,-(SP)                ;store the real D5 value for safekeeping
                 AND.W       D6,D5                   ;AND D5 (instruction) with D6 ($E000)
                 CMP.W       D6,D5                   ;if both D5 & D6 are equal, branch out to possible ALSLR checks
@@ -68,7 +68,7 @@ ALSLRCMP        CLR.L       D6          ;reset D6
                 
                 
                 
-DATASTUFF       BNE         DATACASE        ; if it's not any of the above, it's just data
+DATASTUFF       BRA         DATACASE        ; if it's not any of the above, it's just data
 
 LOOPEND         LEA         NEWLINE,A1           ;load carriage return val
                 MOVE.L      #13,D0
@@ -440,7 +440,6 @@ NEGXXXLL        MOVE.L      #14,D0      ;the NEG is still loaded, so print it no
             *Make sure to check from low->high and always BLT
             
             
-            *******************************************************************************************EDITING BELOW THIS LINE **************************************************
 NEGADDREG       CMPI.W      #$4410,D5       
                 BLT         MAYBEDATAREG    ;Below 4410 it could be a data reg
                 CMPI.W      #$4420,D5       ;If 4410-441F, it's either NEG.B (An) or (An)+
@@ -650,9 +649,9 @@ ALSLRMEMSHIFT   MOVE.W      #$E0D0,D6        ;check for a mem shift first
                     *if the second nybble is even, it's a Right Shift, if it's odd, it's a Left Shift
                     *for the 3rd nybble: 0,2 is .B     4,6 is .W       8,A is .L
 ALSLRREGSHIFT   CLR.L       D6              ;start by checking validity of nybble 3 being below B
-                MOVE.B      #$AF,D6         ;B0 is +1 of the max value allowed in the byte space
+                MOVE.B      #$AF,D6         ;AF is the max value allowed in the byte space
                 CMP.B       D6,D5
-                BGT         DATACASE
+                BHI         DATACASE
                 CLR.B       D6              ; now check if the 3rd nybble is even, and then it is for sure a reg shift
                 MOVE.B      D5,D6           ; 3rd nybble last bit MUST be 0 - plus you already know it's A or lower
                 LSL.B       #3,D6           ; shift the bits left such that the last bit is the new MSB of the byte
@@ -662,15 +661,15 @@ ALSLRREGSHIFT   CLR.L       D6              ;start by checking validity of nybbl
                 CLR.B       D6              ;next is to see which size shift it is
                 MOVE.B      #$30,D6
                 CMP.B       D6,D5           ;If D5's final byte is below 30 (ie, first nybble is 0 or 2)
-                BLT         ALSLRREGBYTE    ;it's a .B shift
+                BCS         ALSLRREGBYTE    ;it's a .B shift
                 CLR.B       D6
                 MOVE.B      #$70,D6         ;if it's below 70 (ie, first nybble is 4 or 6)
                 CMP.B       D6,D5           ;it's a .W shift
-                BLT         ALSLRREGWORD
+                BCS         ALSLRREGWORD
                 CLR.B       D6
                 MOVE.B      #$B0,D6         ;finally, it's going to be a long, but let's check anyway as a failsafe
                 CMP.B       D6,D5
-                BLT         ALSLRREGLONG
+                BCS         ALSLRREGLONG
                 BRA         DATACASE        ;this line should never be called
                 
                
@@ -2131,33 +2130,14 @@ LSLMEMANPLUS    SUBI.B      #8,D5           ;sub 8 from D5 to get register value
 ENDCASE         SIMHALT             ; halt simulator
 
 
-*currently tests: NOP, NEG, JSR, RTS
-TESTCODE        *test for NOP below
-                NOP
-                *tests for NEG below
-                NEG.B       D0      
-                NEG.W       D1
-                NEG.L       D3
-                NEG.B       (A0)
-                NEG.W       (A1)
-                NEG.L       (A2)
-                NEG.B       (A3)+
-                NEG.W       (A4)+
-                NEG.L       (A5)+
-                NEG.B       -(A6)
-                NEG.W       -(A7)
-                NEG.L       -(A0)
-                NEG.W       $FFFFFFFF
-                NEG.L       $FFFFFFFF
-                *tests for JSR below
-                RTS
-                JSR         ENDCASE     ;honestly not sure which mode this tests. (xxx).L?
+*currently tests: NOP, NEG, JSR, RTS, ASL, ASR, LSL, LSR
+TESTCODE        *tests for JSR below
                 JSR         (A1)        ;*****************************NEED TO FIX THIS***********************
                 JSR         $FFFFFFFF  ;maybe?
                 JSR         $FFFF
+                JSR         ENDCASE     ;honestly not sure which mode this tests. (xxx).L?
+
                 *still need more JSR tests?
-                
-                
                 *Test for ASL, ASR, LSL, LSR
                 ASL.B       #1,D0           ;reg shift
                 ASL.W       D1,D2           ;reg shift
@@ -2186,7 +2166,23 @@ TESTCODE        *test for NOP below
                 LSR         (A1)            ;mem shift
                 LSR         (A2)+           ;mem shift
                 LSR         -(A3)           ;mem shift
-                
+                *test for NOP below
+                NOP
+                *tests for NEG below
+                NEG.B       D0      
+                NEG.W       D1
+                NEG.L       D3
+                NEG.B       (A0)
+                NEG.W       (A1)
+                NEG.L       (A2)
+                NEG.B       (A3)+
+                NEG.W       (A4)+
+                NEG.L       (A5)+
+                NEG.B       -(A6)
+                NEG.W       -(A7)
+                NEG.L       -(A0)
+                NEG.W       $FFFFFFFF
+                NEG.L       $FFFFFFFF
                 *test for RTS
                 RTS
                 
@@ -2238,6 +2234,7 @@ NEWLINE         DC.L        '',CR           ;for making a newline
 DOUBLESPACE     DC.L        '  ',0          ;needed to make a double space in some circumstances 
 
                 END         START        ; last line of source
+
 
 
 
