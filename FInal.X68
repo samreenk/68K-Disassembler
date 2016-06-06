@@ -48,13 +48,13 @@ JSRCMP          CLR.L       D6              ;clear d6
                 
                 *NEG start byte is 44
 NEGCMP          CLR.L       D6          ;reset D6
-                MOVE.W      NEGSTARTBYTE,D6     ;move the starting byte into D6
+                MOVE.W      #NEGSTARTBYTE,D6     ;move the starting byte into D6
                 ROL         #8,D6               ;rotate bytes so they're actually in the front, D6 is now 4400
                 CMP.W       D6,D5               ;compare the instrcution code to 4400
-                BLT         ALSLRCMP           ;if D5 is less, it's not NEG
+                BCS         ALSLRCMP           ;if D5 is less, it's not NEG
                 CMPI.W      #$4500,D5
-                BLT         NEGCASE             ;if it's less than 4500, greater or equal to 4400, check neg
-                
+                BCS         NEGCASE             ;if it's less than 4500, greater or equal to 4400, check neg
+                 
                 *ASL/ASR/LSL/LSR starts with $E
 ALSLRCMP        CLR.L       D6          ;reset D6
                 MOVE.W      #ALSRLSTARTNYBLE,D6     ;move the starting nybble into D6
@@ -66,9 +66,110 @@ ALSLRCMP        CLR.L       D6          ;reset D6
                 BEQ         ALSLRPTONE              
                 MOVEM       (SP)+,D5                ;otherwise, reload the stack as it should be and move on
                 
+                *BRA start byte is $60
+BRACMP          CLR.L       D6                      ;clear out D6
+                MOVE.W      #BRASTARTBYTE,D6        ;move starting byte to D6
+                LSL         #8,D6                   ;move the byte to the starting position of the word
+                CMP.W       D6,D5
+                BCS         CMPEORCMP               ;if it's less than that, go to next non-branch comparison
+                CLR.W       D6
+                MOVE.W      #$6100,D6
+                CMP.W       D6,D5                   ;check if it's lower than $6100
+                BCS         BRACASE                 ;if it's between $6000 and $6100, it's a BRA
                 
+                *BCS start byte is $65
+BCSCMP          CLR.W       D6                      ;clear out D6
+                MOVE.W      #BCSSTARTBYTE,D6        ;put the start byte into D6
+                LSL         #8,D6                   ;rotate that byte to the front of the word
+                CMP.W       D6,D5                   
+                BCS         CMPEORCMP               ;if it's less than that, go to next non-branch comparison
+                CLR.W       D6
+                MOVE.W      #$6600,D6
+                CMP.W       D6,D5                   ;check if it's lower than $6100
+                BCS         BCSCASE                 ;if it's between $6500 and $6600, it's a BCS
+
+                *BVC start byte is $68
+BVCCMP          CLR.W       D6                      ;clear out D6
+                MOVE.W      #BVCSTARTBYTE,D6        ;put the start byte into D6
+                LSL         #8,D6                   ;rotate that byte to the front of the word
+                CMP.W       D6,D5                   
+                BCS         CMPEORCMP                ;if it's less than that, go to next non-branch comparison
+                CLR.W       D6
+                MOVE.W      #$6900,D6
+                CMP.W       D6,D5                   ;check if it's lower than $6900
+                BCS         BVCCASE                 ;if it's between $6800 and $6900, it's a BCS
+
+                *BGE start byte is $6C
+BGECMP          CLR.W       D6                      ;clear out D6
+                MOVE.W      #BGESTARTBYTE,D6        ;put the start byte into D6
+                LSL         #8,D6                   ;rotate that byte to the front of the word
+                CMP.W       D6,D5                   
+                BCS         CMPEORCMP                ;if it's less than that, go to next non-branch comparison
+                CLR.W       D6
+                MOVE.W      #$6D00,D6
+                CMP.W       D6,D5                   ;check if it's lower than $6D00
+                BCS         BGECASE                 ;if it's between $6C00 and $6D00, it's a BCS
+
+                *BLT start byte is $6D
+BLTCMP          CLR.W       D6                      ;clear out D6
+                MOVE.W      #BLTSTARTBYTE,D6        ;put the start byte into D6
+                LSL         #8,D6                   ;rotate that byte to the front of the word
+                CMP.W       D6,D5                   
+                BCS         CMPEORCMP                ;if it's less than that, next non-branch comparison
+                CLR.W       D6
+                MOVE.W      #$6E00,D6
+                CMP.W       D6,D5                   ;check if it's lower than $6E00
+                BCS         BLTCASE                 ;if it's between $6D00 and $6E00, it's a BCS
+
+                *EOR and CMP have the same start nybble (B). if the second nybble is odd, it's EOR, otherwise CMP
+CMPEORCMP       CLR.W       D6                      ;clear out D6
+                MOVE.W      #CMPEORNYBBLE,D6        ;move the nybble into D6
+                LSL         #8,D6
+                LSL         #4,D6                   ;move the nybble to the front of the word
+                CMP         D6,D5
+                BCS         CMPICMP               ;if it's less than $B000, it's neither so check the next instruction
+                CLR.W       D6
+                MOVE.W      #$C000,D6
+                CMP         D6,D5                   ;check if D5 is less than $C000 - that is, it's between $B000-BFFFF
+                BCC         CMPICMP                ;if it's greater or equl than $C000, go to next instruction 
+                *now check if the second nybble of D5 is even or odd, since it's def EOR or CMP
+				CLR.W 		D6
+				MOVE.W 		D5,D6
+				ANDI.W 		#$0100,D6 				;if after the ANDI, the result is 0, it means that D5's second nybble is even.  else it's odd
+				CMP.W 		#$0000, D6
+				BEQ			CMPCASE
+				BRA 		EORCASE
                 
-DATASTUFF       BRA         DATACASE        ; if it's not any of the above, it's just data
+                *start byte for CMPI is $0C
+CMPICMP         CLR.W       D6
+                MOVE.W      #CMPISTARTBYTE,D6
+                LSL         #8,D6               ;move the start byte to the front of the word
+                CMPI.W      #$0D00,D5          ;if D5 is equal or higher to that, it's not CMPI
+                BCC         ORCMP
+                CMP.W       D6,D5               ;otherwise just make sure it's equal to $0C00 or higher
+                BCC         CMPICASE
+                
+		*OR start nybble is $8
+ORCMP			CLR.W 		D6
+				MOVE.W 		#ORSTARTNYBBLE,D6		;move starting nybble to D6
+				LSL 		#8,D6
+				LSL 		#4,D6 					;move the nybble to the front
+				CMPI.W 		#$8FC0,D5				;max OR value is $8FBF
+				BCC 		DATACASE 				;normally I'd branch to the next operation, but I know that the max val of the next case (ORI) is lower			******************SAMREEN YOU SHOULD CHECK THIS TO SEE IF IT STILL WORKS WITH YOUR CASE **************
+				CMP.W 		D6,D5					;min OR value is $8000
+				BCC			ORCASE					;if it's $8000 or higher (and sub $8FC0), it's OR
+				
+				
+
+		*ORI start byte is $00
+ORICMP			CLR.W 		D6
+				MOVE.W 		#ORISTARTBYTE,D6
+				LSL 		#8,D6 				;move starting byte to front of word
+				CMPI.W 		#$00C0,D6
+				BCC			DATACASE			;max ORI value is $00BF
+				BRA 		ORICASE				;min ORI value is $0000, so you don't really need to test.
+				
+DATASTUFF       BRA         DATACASE        ; if it's not any of the above, it's just data			**************MAY BECOME UNNEEDED *********************************************************************************************************
 
 LOOPEND         LEA         NEWLINE,A1           ;load carriage return val
                 MOVE.L      #13,D0
@@ -168,7 +269,7 @@ JSRXXXW         MOVE.L      #14,D0
                 LEA         DOLLARSIGN,A1
                 TRAP        #15             ;have now printed "JSR  $"
                 MOVEM       (SP)+,D5        ;reload register values since you're altering D5 value next
-                MOVE.W      (A2)+,D5        ;grab the next word of data from the input
+                MOVE.L      (A2)+,D5        ;grab the next word of data from the input
                 MOVE.L      #16,D2          ;set up your D2 for outputting hex
                 MOVE.L      #15,D0          ;load trap task 15
                 CLR.L       D1              ;clear D1
@@ -184,6 +285,7 @@ JSRXXXL         MOVE.L      #14,D0
                 LEA         DOLLARSIGN,A1
                 TRAP        #15             ;have now printed "JSR  $"
                 MOVEM       (SP)+,D5        ;reload register values since you're altering D5 value next
+                CLR.L       D5
                 MOVE.L      (A2)+,D5        ;grab the next long of data from the input
                 MOVE.L      #16,D2          ;set up your D2 for outputting hex
                 MOVE.L      #15,D0          ;load trap task 15
@@ -197,14 +299,17 @@ JSRXXXL         MOVE.L      #14,D0
 JSRADREG        MOVEM       D5,-(SP)    ;you'll actually do some data reg stuff this time, so save it
                 MOVE.L      #14,D0
                 TRAP        #15     ;first print the "JSR  "
-                LEA         ADDRESSA,A1
-                TRAP        #15     ;print the "A" part of the address reg
+                LEA         INDIRECTADAB,A1
+                TRAP        #15     ;print the "(A" part of the address reg
                 
-                *print whatever the result of 97-last byte of D5 is as the register used
-                SUBI.B      #97,D5
+                *print whatever the result of anding to save the last 3 bits of the byte is
+                ANDI.B      #$07,D5
                 MOVE.B      D5,D1       ;move the result to D1
                 MOVE.L      #3,D0       ;Trap task 3 prints signed number in D1.L
-                TRAP        #15         ;have now printed Ax
+                TRAP        #15         ;have now printed (Ax
+                LEA         CLOSEPAREN,A1
+                MOVE.L      #14,D0
+                TRAP        #15
                 MOVEM       (SP)+,D5        ;reload the data reg
                 BRA         RETURNFROMJSR
                 
@@ -2126,18 +2231,1151 @@ LSLMEMANPLUS    SUBI.B      #8,D5           ;sub 8 from D5 to get register value
 
 
 
+
+
+********************************************************************************* START OF BRA/BCS/BGE/BLT/BVC DISSASSEMBLY ***************************************************************************
+
+BRACASE         MOVEM		D5,-(SP) 		;save D5 value in case you need to alter it later
+				*grab the instruction's location by 'rolling back' A2
+				MOVE.W		-(A2),D3			;move A2 back - the data stored isn't important
+				CLR.L 		D3					;that's how unimportant it is
+				MOVE.L		A2,D3				;the address, however, is important, so we'll keep it in D3
+				MOVE.L		(A2)+,D6			;now put A2 back where it was
+				CLR.L       D0              ;clear out D0 for the trap task later
+                LEA         BRAMESSAGE,A1   ;load BRA message
+                MOVE.L      #14,D0
+                TRAP        #15             ;have now printed "BRA"
+                LEA         DOUBLESPACE,A1  ;load the spacing
+                TRAP        #15             ;have now printed "BRA  "
+				LEA			DOLLARSIGN,A1
+				TRAP 		#15				;have now printed "BRA  $"
+                *now check to see if it's a 8 bit disp, 16 bit, or 32 bit
+                CLR.L       D6
+                MOVE.W      #$60FF,D6
+                CMP         D5,D6
+                BEQ         THIRTYTWOBITDISP    ;if it's equal to $60FF, then it's a 32-bit displacement
+                CLR.W       D6
+                MOVE.W      #$6000,D6
+                CMP         D5,D6 
+                BEQ         SIXTEENBITDISP      ;if it's equal to $6000, then it's a 16-bit displacement
+                *if it's passed these tests, it's just an 8 bit displacement, so just print out the difference between the prev instruction loc
+				CLR.W		D6
+				MOVE.B		D5,D6				;store the displacement value into D6
+				ADD.L		D6,D3				;add the displacement from the instruction stored in D6 to the address value stored in D3 - note this is a signed addition?
+				
+				
+				
+
+BCSCASE
+
+BGECASE
+
+BLTCASE
+
+BVCCASE
+
+SIXTEENBITDISP
+
+THIRTYTWOBITDISP    
+
+********************************************************************************* END OF BRA/BCS/BGE/BLT/BVC DISSASSEMBLY ***************************************************************************
+
+
+
+
+
+
+
+
+
+
+********************************************************************************* START OF CMP DISSASSEMBLY ***************************************************************************
+
+CMPCASE			MOVEM		D5,-(SP)			;save the D5 value
+				CLR.L 		D6
+				MOVE.L 		#14,D0				;for the trap task
+				LEA 		CMPMESSAGE,A1
+				TRAP 		#15 				;have now printed "CMP"
+				*get the 3rd nybble's first two values (or byte's first nybble), cmp those to see if it's B, W, or L
+				MOVE.B 		D5,D6
+				ANDI.B 		#$C0,D6
+				LSR.B 		#6,D6 				;move the first two values to the end of the byte
+				CMPI.B 		#0,D6
+				BEQ			CMPBYTE
+				CMPI.B 		#1,D6
+				BEQ			CMPWORD
+				BRA 		CMPLONG
+CMPBYTE			LEA			BYTEEND,A1
+				TRAP 		#15					;have now printed "CMP.B  "
+				BRA			CMPWHICH
+CMPWORD			LEA			WORDEND,A1
+				TRAP 		#15					;have now printed "CMP.W  "
+				BRA 		CMPWHICH
+CMPLONG			LEA			LONGEND,A1
+				TRAP 		#15					;have now printed "CMP.L  ", and don't need to branch, it'll go there anyway
+				
+				*Now lets figure out which EA mode - based on the last 2 bits of the 3rd nybble (or first nybble of the byte)
+CMPWHICH		CLR.L 		D6
+				MOVE.B 		D5,D6
+				ANDI.B 		#$30,D6			;just save the 3rd/4th bits
+				CMPI.B 		#0,D6
+				BEQ 		CMPDNORAN 		;either Dn or An*
+				CMPI.B 		#$10,D6
+				BEQ			CMPINCORIND		;it's (An)+ OR (An)
+				CMPI.B 		#$20,D6
+				BEQ			CMPDEC 		;It's -(An)
+				BRA 		CMPIMMORABS		;either xxx.W/L or immediate
+	
+CMPDNORAN		CLR.B 		D6				;next determine if it's Dn or An based on the first bit of the last nybble
+				MOVE.B 		D5,D6
+				ANDI 		#$08,D6
+				CMPI.B 		#0,D6
+				BEQ 		CMPDN			;if it's 0 after the AND, it's a data reg
+				LEA			ADDRESSA,A1		;otherwise it's an An*
+				TRAP 		#15 			;now printed "CMP.x  A"
+				CLR.B 		D6
+				MOVE.B 		D5,D6
+				ANDI.B 		#$07,D6  		;leave just the last 3 bits non-zero to tell which reg it is
+				CLR.B 		D1
+				MOVE.B 		D6,D1 			;move the number to D1 to print
+				MOVE.L 		#3,D0
+				TRAP 		#15				;have now printed "CMP.x  An"
+				BRA 		CMPREG
+				
+CMPDN			LEA			DATAREG,A1
+				TRAP 		#15 			;now printed "CMP.x  D"
+				CLR.B 		D6
+				MOVE.B 		D5,D6
+				ANDI.B 		#$07,D6  		;leave just the last 3 bits non-zero to tell which reg it is
+				CLR.B 		D1
+				MOVE.B 		D6,D1 			;move the number to D1 to print
+				MOVE.L 		#3,D0
+				TRAP 		#15				;have now printed "CMP.x  Dn"
+				BRA			CMPREG
+				
+CMPDEC			LEA			INDIRECTADDECB,A1		;otherwise it's -(An)
+				TRAP 		#15 			;now printed "CMP.x  -(A"
+				CLR.B 		D6
+				MOVE.B 		D5,D6
+				ANDI.B 		#$07,D6  		;leave just the last 3 bits non-zero to tell which reg it is
+				CLR.B 		D1
+				MOVE.B 		D6,D1 			;move the number to D1 to print
+				MOVE.L 		#3,D0
+				TRAP 		#15				;have now printed "CMP.x  -(An"
+				MOVE.L		#14,D0
+				LEA 		CLOSEPAREN,A1
+				TRAP 		#15 			;have now printed "CMP.x  -(An)"
+				BRA 		CMPREG
+				
+CMPINCORIND		CLR.B 		D6				;depends on first bit of 4th nybble - if it's 0, it's (An)
+				MOVE.B 		D5,D6
+				ANDI.B 		#$08,D6
+				BEQ 		CMPIND			;otherwise it's (An)+
+				LEA			INDIRECTADAB,A1
+				TRAP 		#15 			;now printed "CMP.x  (A"
+				CLR.B 		D6
+				MOVE.B 		D5,D6
+				ANDI.B 		#$07,D6  		;leave just the last 3 bits non-zero to tell which reg it is
+				CLR.B 		D1
+				MOVE.B 		D6,D1 			;move the number to D1 to print
+				MOVE.L 		#3,D0
+				TRAP 		#15				;have now printed "CMP.x  (An"
+				MOVE.L		#14,D0
+				LEA 		INCREMENTEND,A1
+				TRAP 		#15 			;have now printed "CMP.x  (An)+"
+				BRA 		CMPREG
+
+CMPIND 			LEA			INDIRECTADAB,A1
+				TRAP 		#15 			;now printed "CMP.x  (A"
+				CLR.B 		D6
+				MOVE.B 		D5,D6
+				ANDI.B 		#$07,D6  		;leave just the last 3 bits non-zero to tell which reg it is
+				CLR.B 		D1
+				MOVE.B 		D6,D1 			;move the number to D1 to print
+				MOVE.L 		#3,D0
+				TRAP 		#15				;have now printed "CMP.x  (An"
+				MOVE.L		#14,D0
+				LEA 		CLOSEPAREN,A1
+				TRAP 		#15 			;have now printed "CMP.x  (An)"
+				BRA 		CMPREG
+				
+				*For immediate data, I'm assuming it follows the same logic as the CMPI instruction
+					*if Size == B, data is low order byte of immediate word
+					*size == W, data is entire immediate word
+					*size == L, data is next two immediate words
+CMPIMMORABS		;check what the last 3 bits equal to determine what to print out now
+                CLR.L       D6
+                MOVE.B      D5,D6
+                ANDI.B      #$07,D6
+                CMPI.B      #0,D6
+                BEQ         CMPABSWORD
+                CMPI.B      #1, D6
+                BEQ         CMPABSLONG
+                *now you know it's an immediate, so it's going to get a little odd.
+                *Check which size it is again
+                *get the 3rd nybble's first two values (or byte's first nybble), cmp those to see if it's B, W, or L
+				MOVE.B 		D5,D6
+				ANDI.B 		#$C0,D6
+				LSR.B 		#6,D6 				;move the first two values to the end of the byte
+                LEA         POUNDSIGN,A1
+                MOVE.L      #14,D0
+                TRAP        #15                 ;have now printed "CMP.x  #"
+                MOVE.L      #3,D0              ;load trap task 3 for later
+				CMPI.B 		#0,D6
+				BEQ			CMPBYTEIMM
+				CMPI.B 		#1,D6
+				BEQ			CMPWORDIMM
+				BRA 		CMPLONGIMM
+                
+CMPBYTEIMM		CLR.L       D1
+                CLR.W       D6
+                MOVE.W      (A2)+,D6            ;grab the byte of the next word.
+                MOVE.B      D6,D1
+                TRAP        #15                 ;have now printed "CMP.x  #xx"
+				BRA			CMPREG
+                
+CMPWORDIMM		CLR.L       D1
+                CLR.W       D6
+                MOVE.W      (A2)+,D6            ;grab the next word.
+                MOVE.W      D6,D1
+                TRAP        #15                 ;have now printed "CMP.x  #xxxx"
+				BRA 		CMPREG
+                
+CMPLONGIMM	    CLR.L       D1
+                CLR.L       D6
+                MOVE.L      (A2)+,D6            ;grab the long of the next word.
+                MOVE.L      D6,D1
+                TRAP        #15                 ;have now printed "CMP.x  #xxxxxxxx"
+				BRA         CMPREG
+                
+
+CMPABSWORD      MOVE.L      #14,D0     
+                LEA 		DOLLARSIGN,A1
+				TRAP 		#15 			;have now printed "CMP.x  $"
+				MOVE.B 		#16,D2 			;allows for trap task #15 to display hex numbers
+				MOVE.L 		#15,D0			;load trap task 15 for later
+                MOVEM       (SP)+,D5        ;reload the stack since you're about to alter D5's location anyway
+                CLR.L       D1
+				MOVE.W      (A2)+,D1		;move the next word into D1
+				TRAP 		#15				;have now printed "EOR.x  $xxxx"
+				BRA 		CMPREG
+                
+CMPABSLONG      MOVE.L      #14,D0     
+                LEA 		DOLLARSIGN,A1
+				TRAP 		#15 			;have now printed "CMP.x  $"
+				MOVE.B 		#16,D2 			;allows for trap task #15 to display hex numbers
+				MOVE.L 		#15,D0			;load trap task 15 for later
+                MOVEM       (SP)+,D5        ;reload the stack since you're about to alter D5's location anyway
+				MOVE.L      (A2)+,D1		;move the whole long into D1
+				TRAP 		#15				;have now printed "EOR.x  Dn, $xxxxxxxx"		
+				BRA 		CMPREG
+                
+CMPREG			MOVE.L      #14,D0
+                LEA         COMMASPACE,A1
+                TRAP        #15             ;have now printed "CMP.x  ea, "
+                CLR.B 		D6
+				MOVE.W 		D5,D6
+				ANDI.W 		#$0E00,D6		;clear out the whole thing except the register value (2nd nybble first 3 bits)
+				LSR.W 		#8,D6
+				LSR.W 		#1,D6 			;move those bits to the end of the word
+				LEA			DATAREG,A1
+				Trap		#15				;have now printed "CMP.x  ea, D"
+				CLR.L		D1
+				MOVE.B 		D6,D1			;move that number to D1 to print later
+				MOVE.L		#3,D0
+				TRAP 		#15				;Have now printed "CMP.x  ea, Dn"
+
+				MOVEM       (SP)+,D5        ;reload the stack
+				BRA 		LOOPEND
+
+
+
+********************************************************************************* END OF CMP DISSASSEMBLY ***************************************************************************
+
+
+
+
+
+
+
+
+
+
+********************************************************************************* START OF EOR DISSASSEMBLY ***************************************************************************
+
+EORCASE			MOVEM		D5,-(SP)			;save the D5 value
+				CLR.L 		D6
+				MOVE.L 		#14,D0				;for the trap task
+				LEA 		EORMESSAGE,A1
+				TRAP 		#15 				;have now printed "EOR"
+				*get the 3rd nybble's first two values (or byte's first nybble), cmp those to see if it's B, W, or L
+				MOVE.B 		D5,D6
+				ANDI.B 		#$C0,D6
+				LSR.B 		#6,D6 				;move the first two values to the end of the byte
+				CMPI.B 		#0,D6
+				BEQ			EORBYTE
+				CMPI.B 		#1,D6
+				BEQ			EORWORD
+				BRA 		EORLONG
+EORBYTE			LEA			BYTEEND,A1
+				TRAP 		#15					;have now printed "EOR.B  "
+				BRA			EORREG
+EORWORD			LEA			WORDEND,A1
+				TRAP 		#15					;have now printed "EOR.W  "
+				BRA 		EORREG
+EORLONG			LEA			LONGEND,A1
+				TRAP 		#15					;have now printed "EOR.L  ", and don't need to branch, it'll go there anyway
+EORREG			CLR.B 		D6
+				MOVE.W 		D5,D6
+				ANDI.W 		#$0E00,D6		;clear out the whole thing except the register value (2nd nybble first 3 bits)
+				LSR.W 		#8,D6
+				LSR.W 		#1,D6 			;move those bits to the end of the word
+				LEA			DATAREG,A1
+				Trap		#15				;have now printed "EOR.x  D"
+				CLR.L		D1
+				MOVE.B 		D6,D1			;move that number to D1 to print later
+				MOVE.L		#3,D0
+				TRAP 		#15				;Have now printed "EOR.x  Dn"
+				MOVE.L 		#14,D0
+				LEA 		COMMASPACE,A1
+				TRAP 		#15 			;have now printed "EOR.x  Dn, "
+				
+				*Now lets figure out which EA mode - based on the last 2 bits of the 3rd nybble (or first nybble of the byte)
+				MOVE.B 		D5,D6
+				ANDI.B 		#$30,D6			;just save the 3rd/4th bits
+				CMPI.B 		#0,D6
+				BEQ 		EORDNORAN 		;either Dn or An* - JK just Dn
+				CMPI.B 		#$10,D6
+				BEQ			EORINCORAN		;either (An) or (An)+
+                CMPI.B      #$20,D6         ;if the 3/4th bits are 10, it's -(An)
+                BEQ         EORDEC
+				BRA 		EORABS			;either xxx.W/L
+	
+EORDNORAN		CLR.B 		D6				;next determine if it's Dn or An based on the first bit of the last nybble
+				MOVE.B 		D5,D6           ; the above is somewhat wrong - An* is not valid, it's always Dn if it's here
+				ANDI 		#$08,D6         ; or data i suppose
+				CMPI.B 		#0,D6
+				BEQ 		EORDN			;if it's 0 after the AND, it's a data reg - actually it always will
+				BRA 		DATACASE		;otherwise it's DATA
+
+				
+EORDN			LEA			DATAREG,A1
+				TRAP 		#15 			;now printed "EOR.x  Dn, D"
+				CLR.B 		D6
+				MOVE.B 		D5,D6
+				ANDI.B 		#$07,D6  		;leave just the last 3 bits non-zero to tell which reg it is
+				CLR.B 		D1
+				MOVE.B 		D6,D1 			;move the number to D1 to print
+				MOVE.L 		#3,D0
+				TRAP 		#15				;have now printed "EOR.x  Dn, Dn"
+				
+				MOVEM       (SP)+,D5        ;reload the stack
+                BRA         LOOPEND         ;go to next instruction
+				
+EORINCORAN		CLR.B 		D6				;next determine if it's (An) or (An)+ based on the first bit of the last nybble
+				MOVE.B 		D5,D6           ;
+				ANDI 		#$08,D6
+				CMPI.B 		#0,D6
+				BEQ 		EORAN			;if it's 0 after the AND, it's (An)
+				LEA			INDIRECTADAB,A1		;otherwise it's (An)+
+				TRAP 		#15 			;now printed "EOR.x  Dn, (A"
+				CLR.B 		D6
+				MOVE.B 		D5,D6
+				ANDI.B 		#$07,D6  		;leave just the last 3 bits non-zero to tell which reg it is
+				CLR.B 		D1
+				MOVE.B 		D6,D1 			;move the number to D1 to print
+				MOVE.L 		#3,D0
+				TRAP 		#15				;have now printed "EOR.x  Dn, (An"
+				MOVE.L		#14,D0
+				LEA 		INCREMENTEND,A1
+				TRAP 		#15 			;have now printed "EOR.x  Dn, (An)+"
+				
+				MOVEM       (SP)+,D5        ;reload the stack
+                BRA         LOOPEND         ;go to next instruction
+                
+EORDEC          LEA			INDIRECTADDECB,A1		;it's -(An)
+				TRAP 		#15 			;now printed "EOR.x  Dn, -(A"
+				CLR.B 		D6
+				MOVE.B 		D5,D6
+				ANDI.B 		#$07,D6  		;leave just the last 3 bits non-zero to tell which reg it is
+				CLR.B 		D1
+				MOVE.B 		D6,D1 			;move the number to D1 to print
+				MOVE.L 		#3,D0
+				TRAP 		#15				;have now printed "EOR.x  Dn, -(An"
+				MOVE.L		#14,D0
+				LEA 		CLOSEPAREN,A1
+				TRAP 		#15 			;have now printed "EOR.x  Dn, -(An)"
+				
+				MOVEM       (SP)+,D5        ;reload the stack
+                BRA         LOOPEND         ;go to next instruction
+				
+EORAN			LEA			INDIRECTADAB,A1
+				TRAP 		#15 			;now printed "EOR.x  Dn, (A"
+				CLR.B 		D6
+				MOVE.B 		D5,D6
+				ANDI.B 		#$07,D6  		;leave just the last 3 bits non-zero to tell which reg it is
+				CLR.B 		D1
+				MOVE.B 		D6,D1 			;move the number to D1 to print
+				MOVE.L 		#3,D0
+				TRAP 		#15				;have now printed "EOR.x  Dn, (An"
+				MOVE.L		#14,D0
+				LEA 		CLOSEPAREN,A1
+				TRAP 		#15 			;have now printed "EOR.x  Dn, (An)"
+				
+				MOVEM       (SP)+,D5        ;reload the stack
+                BRA         LOOPEND         ;go to next instruction
+				
+EORABS			CLR.B 		D6 				;check what the last 3 bits equal to determine what to print out now
+				MOVE.B 		D5,D6
+				ANDI.B 		#$07,D6
+				LEA 		DOLLARSIGN,A1
+				TRAP 		#15 			;have now printed "EOR.x  Dn, $"
+				MOVE.B 		#16,D2 			;allows for trap task #15 to display hex numbers
+				MOVE.L 		#15,D0			;load trap task 15 for later
+				CMPI.B 		#0,D6			;if the last 3 bits were 0, it's (xxx).W
+				BEQ         EORABSWORD					;else it's just (xxx).L
+				MOVEM       (SP)+,D5        ;reload the stack since you're about to alter D5's location anyway
+				MOVE.L      (A2)+,D1		;move the whole long into D1
+				TRAP 		#15				;have now printed "EOR.x  Dn, $xxxxxxxx"
+				
+				BRA 		LOOPEND			;go to next instruction
+				
+EORABSWORD		MOVEM       (SP)+,D5        ;reload the stack since you're about to alter D5's location anyway
+				CLR.L 		D1				;clear out D1
+				MOVE.W      (A2)+,D1		;move the word into D1
+				TRAP 		#15				;have now printed "EOR.x  Dn, $xxxx"
+				
+				BRA 		LOOPEND 		;onto the next instruction 
+				
+
+
+
+********************************************************************************* END OF EOR DISSASSEMBLY ***************************************************************************
+
+
+
+
+
+
+
+
+
+
+
+
+
+********************************************************************************* START OF CMPI DISSASSEMBLY ***************************************************************************
+
+CMPICASE        MOVEM       D5,-(SP)        ;save D5 incase you change it at some point
+                *CMPI's 3rd nybble (byte's first nybble) has to be B or lower
+                CLR.W       D6
+                MOVE.B      D5,D6
+                ANDI.B      #$F0,D6
+                CMPI.B      #$C0,D6
+                BCC         DATACASE        ;if it's C or higher, it's data
+                LEA         CMPIMESSAGE,A1
+                MOVE.L      #14,D0
+                TRAP        #15             ;have now printed "CMPI"
+                *now let's check the size, which will impact what you print next in addition to the qualifier
+                *first two bits of the byte's first nybble determine size
+                ANDI.B      #$C0,D6         ;D6 still has the full first nybble stored, so just clear out the last two bits of the first nybble
+                LSR         #6,D6           ;move those first two bits to the end
+                CMPI.B      #0,D6
+                BEQ         CMPIBYTE        ; if it ==0, it's a byte 
+                CMPI.B      #1,D6
+                BEQ         CMPIWORD        ;if it == 1, it's a word
+CMPILONG        LEA         LONGEND,A1      ;else it's a long
+                TRAP        #15             ;Have now printed "CMPI.L  "
+                LEA         POUNDSIGN,A1    
+                TRAP        #15             ;have now printed "CMPI.L  #"
+                MOVE.L      #15,D0              ;load trap task 15 for later
+                MOVE.B      #10,D2              ;make sure it prints in decimal
+                CLR.L       D1
+                CLR.W       D6
+                MOVE.L      (A2)+,D6            ;grab the next long.
+                MOVE.L      D6,D1
+                TRAP        #15                 ;have now printed "CMPI.L  #xxxxxxxx"
+                BRA         CMPIEA
+                
+
+CMPIWORD        LEA         WORDEND,A1      ;else it's a long
+                TRAP        #15             ;Have now printed "CMPI.W  "
+                LEA         POUNDSIGN,A1    
+                TRAP        #15             ;have now printed "CMPI.W  #"
+                MOVE.L      #15,D0              ;load trap task 15 for later
+                MOVE.B      #10,D2              ;make sure it prints in decimal
+                CLR.L       D1
+                CLR.W       D6
+                MOVE.W      (A2)+,D6            ;grab the next word.
+                MOVE.W      D6,D1
+                TRAP        #15                 ;have now printed "CMPI.W  #xxxx"
+                BRA         CMPIEA
+
+CMPIBYTE        LEA         BYTEEND,A1      ;else it's a long
+                TRAP        #15             ;Have now printed "CMPI.B  "
+                LEA         POUNDSIGN,A1    
+                TRAP        #15             ;have now printed "CMPI.B  #"
+                MOVE.L      #15,D0              ;load trap task 15 for later
+                MOVE.B      #10,D2              ;make sure it prints in decimal
+                CLR.L       D1
+                CLR.W       D6
+                MOVE.W      (A2)+,D6            ;grab the byte from the next word.
+                MOVE.B      D6,D1
+                TRAP        #15                 ;have now printed "CMPI.L  #xx"
+                BRA         CMPIEA
+                
+CMPIEA          LEA         COMMASPACE,A1
+                MOVE.L      #14,D0
+                TRAP        #15             ;have now printed "CMPI.x  #x, "
+                *next is to figure out which type of EA it is and print that out
+                *the last 2 bits of the byte's first nybble help determine the mode
+                CLR.B       D6
+                MOVE.B      D5,D6
+                ANDI.B      #$30,D6
+                CMPI.B      #0,D6           ;if == 0, it's a data reg
+                BEQ         CMPIDN
+                CMPI.B      #$10,D6         ;if == 0001 0000, it's (An) or (An)+
+                BEQ         CMPIINCORAN
+                CMPI.B      #$20,D6         ;if it's == 0010 0000, it's -(An)
+				BEQ 		CMPIDEC
+                BRA         CMPIABS         ;else it's an absolute
+                
+CMPIDN          LEA         DATAREG,A1
+                TRAP        #15             ;have now printed "CMPI.x  #x, D"
+                CLR.B       D6
+                MOVE.B      D5,D6           ;last 3 bits of the byte determine the reg
+                ANDI.B      #07,D6
+                MOVE.L      #3,D0           ;load trap task 3
+                CLR.L       D1
+                MOVE.B      D6,D1
+                TRAP        #15             ;have now printed "CMPI.x  #x, Dn"
+                
+                MOVEM       (SP)+,D5        ;reload the stack
+                BRA         LOOPEND         ;go to next instruction        
+                
+CMPIINCORAN     CLR.B       D6              ;determine which [(An) or (An)+] it is based on the first bit of the last nybble
+                MOVE.B      D5,D6
+                ANDI.B      #$08,D6
+                CMPI.B      #8,D6
+                BEQ         CMPIINC         ;if its == 0000 1000, it's (An)+
+CMPIAN          LEA         INDIRECTADAB,A1 ;otherwise it's (An), so start printing out stuff
+                TRAP        #15             ;have now printed "CMPI.x  #x, (A"
+                CLR.B       D6
+                MOVE.B      D5,D6           ;last 3 bits of the byte determine the reg
+                ANDI.B      #07,D6
+                MOVE.L      #3,D0           ;load trap task 3
+                CLR.L       D1
+                MOVE.B      D6,D1
+                TRAP        #15             ;have now printed "CMPI.x  #x, (An"
+                MOVE.L      #14,D0
+                LEA         CLOSEPAREN,A1
+                TRAP        #15             ;have now printed "CMPI.x  #x, (An)"
+                
+                MOVEM       (SP)+,D5        ;reload the stack
+                BRA         LOOPEND         ;go to next instruction 
+
+CMPIINC         LEA         INDIRECTADAB,A1
+                TRAP        #15             ;have now printed "CMPI.x  #x, (A"
+                CLR.B       D6
+                MOVE.B      D5,D6           ;last 3 bits of the byte determine the reg
+                ANDI.B      #07,D6
+                MOVE.L      #3,D0           ;load trap task 3
+                CLR.L       D1
+                MOVE.B      D6,D1
+                TRAP        #15             ;have now printed "CMPI.x  #x, (An"
+                MOVE.L      #14,D0
+                LEA         INCREMENTEND,A1
+                TRAP        #15             ;have now printed "CMPI.x  #x, (An)+"
+                
+                MOVEM       (SP)+,D5        ;reload the stack
+                BRA         LOOPEND         ;go to next instruction 
+
+CMPIDEC         LEA         INDIRECTADDECB,A1 
+                TRAP        #15             ;have now printed "CMPI.x  #x, (-A"
+                CLR.B       D6
+                MOVE.B      D5,D6           ;last 3 bits of the byte determine the reg
+                ANDI.B      #07,D6
+                MOVE.L      #3,D0           ;load trap task 3
+                CLR.L       D1
+                MOVE.B      D6,D1
+                TRAP        #15             ;have now printed "CMPI.x  #x, -(An"
+                MOVE.L      #14,D0
+                LEA         CLOSEPAREN,A1
+                TRAP        #15             ;have now printed "CMPI.x  #x, -(An)"
+                
+                MOVEM       (SP)+,D5        ;reload the stack
+                BRA         LOOPEND         ;go to next instruction 
+                
+CMPIABS         CLR.B       D6
+                MOVE.B      D5,D6           ;determine if it's (xxx).W or (xxx).L based on the last 3 bits
+                ANDI.B      #07,D6
+                MOVE.L      #14,D0
+                LEA 		DOLLARSIGN,A1
+				TRAP 		#15 			;have now printed "CMPI.x  #x, $"
+                MOVE.B 		#16,D2 			;allows for trap task #15 to display hex numbers
+				MOVE.L 		#15,D0			;load trap task 15 for later
+                CLR.L       D1              ;clear D1 for later too
+                CMPI.B      #0,D6
+                BEQ         CMPIABSWORD     ;if the last 3 bits are 0, it's (xxx).W
+                *else it's (xxx).L
+				MOVEM       (SP)+,D5        ;reload the stack since you're about to alter D5's location anyway
+				MOVE.L      (A2)+,D1		;move the whole long into D1
+				TRAP 		#15				;have now printed "CMPI.x  #x, $xxxxxxxx"
+                
+                BRA         LOOPEND         ;go to the next instruction
+                
+CMPIABSWORD     MOVEM       (SP)+,D5        ;reload the stack since you're about to alter D5's location anyway
+				MOVE.W      (A2)+,D1		;move the next word into D1
+				TRAP 		#15				;have now printed "CMPI.x  #x, $xxxx"
+                
+                BRA         LOOPEND         ;go to the next instruction
+
+********************************************************************************* END OF CMPI DISSASSEMBLY ***************************************************************************
+
+
+
+
+
+
+
+
+********************************************************************************* START OF OR DISSASSEMBLY ***************************************************************************
+
+
+ORCASE			MOVEM		D5,-(SP)			;save the D5 value
+				CLR.L 		D6
+				MOVE.L 		#14,D0				;for the trap task
+				LEA 		ORMESSAGE,A1
+				TRAP 		#15 				;have now printed "OR"
+				*get the 3rd nybble's first two values (or byte's first nybble), cmp those to see if it's B, W, or L
+				MOVE.B 		D5,D6
+				ANDI.B 		#$C0,D6
+				LSR.B 		#6,D6 				;move the first two values to the end of the byte
+				CMPI.B 		#0,D6
+				BEQ			ORBYTE
+				CMPI.B 		#1,D6
+				BEQ			ORWORD
+				BRA 		ORLONG
+ORBYTE			LEA			BYTEEND,A1
+				TRAP 		#15					;have now printed "OR.B  "
+				BRA			ORREGCHECK
+ORWORD			LEA			WORDEND,A1
+				TRAP 		#15					;have now printed "OR.W  "
+				BRA 		ORREGCHECK
+ORLONG			LEA			LONGEND,A1
+				TRAP 		#15					;have now printed "OR.L  ", and don't need to branch, it'll go there anyway
+ORREGCHECK		*Check which type of OR op it is - if the 2nd nybble 4th bit is 0, it's OR <ea>, DN
+				*otherwise it's OR Dn, <ea> which will follow the same logic as EOR, except without the possibility of <Ea>=Dn
+				MOVE.W 		D5,D6
+				ANDI.W 		#$0100,D6 		;isolate 4th bit of 2nd nybble
+				CMPI.W 		#0,D6
+				BEQ 		OROCASE			;branch to the OR Other CASE
+				CLR.W 		D6 				;otherwise reset D6 for normal interaction
+				MOVE.W 		D5,D6
+				ANDI.W 		#$0E00,D6		;clear out the whole thing except the register value (2nd nybble first 3 bits)
+				LSR.W 		#8,D6
+				LSR.W 		#1,D6 			;move those bits to the end of the word
+				LEA			DATAREG,A1
+				Trap		#15				;have now printed "OR.x  D"
+				CLR.L		D1
+				MOVE.B 		D6,D1			;move that number to D1 to print later
+				MOVE.L		#3,D0
+				TRAP 		#15				;Have now printed "OR.x  Dn"
+				MOVE.L 		#14,D0
+				LEA 		COMMASPACE,A1
+				TRAP 		#15 			;have now printed "OR.x  Dn, "
+				
+				*Now lets figure out which EA mode - based on the last 2 bits of the 3rd nybble (or first nybble of the byte)
+				MOVE.B 		D5,D6
+				ANDI.B 		#$30,D6			;just save the 3rd/4th bits
+				CMPI.B 		#0,D6
+				BEQ 		DATACASE		;it can't be a Dn or An*
+				CMPI.B 		#$10,D6
+				BEQ			ORINCORAN		;either (An) or (An)+
+                CMPI.B      #$20,D6         ;if the 3/4th bits are 10, it's -(An)
+                BEQ         ORDEC
+				BRA 		ORABS		;either xxx.W/L
+
+				
+ORINCORAN		CLR.B 		D6				;next determine if it's (An) or (An)+ based on the first bit of the last nybble
+				MOVE.B 		D5,D6           ;
+				ANDI 		#$08,D6
+				CMPI.B 		#0,D6
+				BEQ 		ORAN			;if it's 0 after the AND, it's (An)
+				LEA			INDIRECTADAB,A1		;otherwise it's (An)+
+				TRAP 		#15 			;now printed "OR.x  Dn, (A"
+				CLR.B 		D6
+				MOVE.B 		D5,D6
+				ANDI.B 		#$07,D6  		;leave just the last 3 bits non-zero to tell which reg it is
+				CLR.B 		D1
+				MOVE.B 		D6,D1 			;move the number to D1 to print
+				MOVE.L 		#3,D0
+				TRAP 		#15				;have now printed "OR.x  Dn, (An"
+				MOVE.L		#14,D0
+				LEA 		INCREMENTEND,A1
+				TRAP 		#15 			;have now printed "OR.x  Dn, (An)+"
+				
+				MOVEM       (SP)+,D5        ;reload the stack
+                BRA         LOOPEND         ;go to next instruction
+                
+ORDEC          	LEA			INDIRECTADDECB,A1		;it's -(An)
+				TRAP 		#15 			;now printed "OR.x  Dn, -(A"
+				CLR.B 		D6
+				MOVE.B 		D5,D6
+				ANDI.B 		#$07,D6  		;leave just the last 3 bits non-zero to tell which reg it is
+				CLR.B 		D1
+				MOVE.B 		D6,D1 			;move the number to D1 to print
+				MOVE.L 		#3,D0
+				TRAP 		#15				;have now printed "OR.x  Dn, -(An"
+				MOVE.L		#14,D0
+				LEA 		CLOSEPAREN,A1
+				TRAP 		#15 			;have now printed "OR.x  Dn, -(An)"
+				
+				MOVEM       (SP)+,D5        ;reload the stack
+                BRA         LOOPEND         ;go to next instruction
+				
+ORAN			LEA			INDIRECTADAB,A1
+				TRAP 		#15 			;now printed "OR.x  Dn, (A"
+				CLR.B 		D6
+				MOVE.B 		D5,D6
+				ANDI.B 		#$07,D6  		;leave just the last 3 bits non-zero to tell which reg it is
+				CLR.B 		D1
+				MOVE.B 		D6,D1 			;move the number to D1 to print
+				MOVE.L 		#3,D0
+				TRAP 		#15				;have now printed "OR.x  Dn, (An"
+				MOVE.L		#14,D0
+				LEA 		CLOSEPAREN,A1
+				TRAP 		#15 			;have now printed "OR.x  Dn, (An)"
+				
+				MOVEM       (SP)+,D5        ;reload the stack
+                BRA         LOOPEND         ;go to next instruction
+				
+ORABS			CLR.B 		D6 				;check what the last 3 bits equal to determine what to print out now
+				MOVE.B 		D5,D6
+				ANDI.B 		#$07,D6
+				LEA 		DOLLARSIGN,A1	;else it's ABS so print the $
+				TRAP 		#15 			;have now printed "OR.x  Dn, $"
+				MOVE.B 		#16,D2 			;allows for trap task #15 to display hex numbers
+				MOVE.L 		#15,D0			;load trap task 15 for later
+				CMPI.B 		#0,D6			;if the last 3 bits were 0, it's (xxx).W
+				BEQ         ORABSWORD		;else it's just (xxx).L
+				MOVEM       (SP)+,D5        ;reload the stack since you're about to alter D5's location anyway
+				MOVE.L      (A2)+,D1		;move the whole long into D1
+				TRAP 		#15				;have now printed "OR.x  Dn, $xxxxxxxx"
+				
+				BRA 		LOOPEND			;go to next instruction
+				
+ORABSWORD		MOVEM       (SP)+,D5        ;reload the stack since you're about to alter D5's location anyway
+				CLR.L 		D1				;clear out D1
+				MOVE.W      (A2)+,D1		;move the word into D1
+				TRAP 		#15				;have now printed "OR.x  Dn, $xxxx"
+				
+				BRA 		LOOPEND 		;onto the next instruction
+
+				
+				
+
+				*This case will be almost the same as before, HOWEVER the modes allowed are ALL
+					*or <EA>, dN
+OROCASE			*Now lets figure out which EA mode - based on the last 2 bits of the 3rd nybble (or first nybble of the byte)
+				MOVE.B 		D5,D6
+				ANDI.B 		#$30,D6			;just save the 3rd/4th bits
+				CMPI.B 		#0,D6
+				BEQ 		ORODNDATA 		;either Dn or data
+				CMPI.B 		#$10,D6
+				BEQ			OROINCORAN		;either (An) or (An)+
+                CMPI.B      #$20,D6         ;if the 3/4th bits are 10, it's -(An)
+                BEQ         ORODEC
+				BRA 		OROABSIMM		;either xxx.W/L, or an immediate
+				
+OROREG			MOVE.L 		#14,D0
+				LEA 		COMMASPACE,A1
+				TRAP 		#15 			;have now printed "OR.x  ea, "
+				CLR.B 		D6
+				MOVE.W 		D5,D6
+				ANDI.W 		#$0E00,D6		;clear out the whole thing except the register value (2nd nybble first 3 bits)
+				LSR.W 		#8,D6
+				LSR.W 		#1,D6 			;move those bits to the end of the word
+				LEA			DATAREG,A1
+				Trap		#15				;have now printed "OR.x  ea, D"
+				CLR.L		D1
+				MOVE.B 		D6,D1			;move that number to D1 to print later
+				MOVE.L		#3,D0
+				TRAP 		#15				;Have now printed "OR.x  ea, Dn"
+				
+				MOVEM       (SP)+,D5        ;reload the stack
+                BRA         LOOPEND         ;go to next instruction
+				
+	
+ORODNDATA		CLR.B 		D6				;next determine if it's Dn or data based on the first bit of the last nybble
+				MOVE.B 		D5,D6     
+				ANDI 		#$08,D6         
+				CMPI.B 		#0,D6
+				BEQ 		ORODN			;if it's 0 after the AND, it's a data reg
+				BRA 		DATACASE		;otherwise it's DATA
+
+				
+ORODN			LEA			DATAREG,A1
+				TRAP 		#15 			;now printed "OR.x  D"
+				CLR.B 		D6
+				MOVE.B 		D5,D6
+				ANDI.B 		#$07,D6  		;leave just the last 3 bits non-zero to tell which reg it is
+				CLR.B 		D1
+				MOVE.B 		D6,D1 			;move the number to D1 to print
+				MOVE.L 		#3,D0
+				TRAP 		#15				;have now printed "OR.x  Dn"
+				BRA 		OROREG
+				
+OROINCORAN		CLR.B 		D6				;next determine if it's (An) or (An)+ based on the first bit of the last nybble
+				MOVE.B 		D5,D6           ;
+				ANDI 		#$08,D6
+				CMPI.B 		#0,D6
+				BEQ 		OROAN			;if it's 0 after the AND, it's (An)
+				LEA			INDIRECTADAB,A1		;otherwise it's (An)+
+				TRAP 		#15 			;now printed "OR.x  (A"
+				CLR.B 		D6
+				MOVE.B 		D5,D6
+				ANDI.B 		#$07,D6  		;leave just the last 3 bits non-zero to tell which reg it is
+				CLR.B 		D1
+				MOVE.B 		D6,D1 			;move the number to D1 to print
+				MOVE.L 		#3,D0
+				TRAP 		#15				;have now printed "OR.x  (An"
+				MOVE.L		#14,D0
+				LEA 		INCREMENTEND,A1
+				TRAP 		#15 			;have now printed "OR.x  (An)+"
+				BRA 		OROREG
+                
+ORODEC          LEA			INDIRECTADDECB,A1		;it's -(An)
+				TRAP 		#15 			;now printed "OR.x  -(A"
+				CLR.B 		D6
+				MOVE.B 		D5,D6
+				ANDI.B 		#$07,D6  		;leave just the last 3 bits non-zero to tell which reg it is
+				CLR.B 		D1
+				MOVE.B 		D6,D1 			;move the number to D1 to print
+				MOVE.L 		#3,D0
+				TRAP 		#15				;have now printed "OR.x  -(An"
+				MOVE.L		#14,D0
+				LEA 		CLOSEPAREN,A1
+				TRAP 		#15 			;have now printed "OR.x  -(An)"
+				BRA 		OROREG
+				
+OROAN			LEA			INDIRECTADAB,A1
+				TRAP 		#15 			;now printed "OR.x  (A"
+				CLR.B 		D6
+				MOVE.B 		D5,D6
+				ANDI.B 		#$07,D6  		;leave just the last 3 bits non-zero to tell which reg it is
+				CLR.B 		D1
+				MOVE.B 		D6,D1 			;move the number to D1 to print
+				MOVE.L 		#3,D0
+				TRAP 		#15				;have now printed "OR.x  (An"
+				MOVE.L		#14,D0
+				LEA 		CLOSEPAREN,A1
+				TRAP 		#15 			;have now printed "OR.x  (An)"
+				BRA 		OROREG
+				
+OROABSIMM		CLR.B 		D6 				;check what the last 3 bits equal to determine what to print out now
+				MOVE.B 		D5,D6
+				ANDI.B 		#$07,D6
+				CMPI.B 		#04,D6
+				BEQ 		OROIMM			;if last nybble == 0100, it's an immediate
+				LEA 		DOLLARSIGN,A1	;else it's ABS so print the $
+				TRAP 		#15 			;have now printed "OR.x  $"
+				MOVE.B 		#16,D2 			;allows for trap task #15 to display hex numbers
+				MOVE.L 		#15,D0			;load trap task 15 for later
+				CMPI.B 		#0,D6			;if the last 3 bits were 0, it's (xxx).W
+				BEQ         ORABSWORD		;else it's just (xxx).L
+				MOVEM       (SP)+,D5        ;reload the stack since you're about to alter D5's location anyway
+				MOVE.L      (A2)+,D1		;move the whole long into D1
+				TRAP 		#15				;have now printed "OR.x  $xxxxxxxx"
+				
+				BRA 		OROREG
+				
+OROABSWORD		MOVEM       (SP)+,D5        ;reload the stack since you're about to alter D5's location anyway
+				CLR.L 		D1				;clear out D1
+				MOVE.W      (A2)+,D1		;move the word into D1
+				TRAP 		#15				;have now printed "OR.x  Dn, $xxxx"
+				
+				BRA 		OROREG
+
+				
+				
+				
+OROIMM 			MOVE.B 		D5,D6
+				ANDI.B 		#$C0,D6
+				LSR.B 		#6,D6 				;move the first two values to the end of the byte
+				LEA 		POUNDSIGN,A1
+				TRAP 		#15 			;have now printed "ORO.x  #"
+				MOVE.L      #3,D0              ;load trap task 3 for later
+				CMPI.B 		#0,D6
+				BEQ			OROBYTEIMM
+				CMPI.B 		#1,D6
+				BEQ			OROWORDIMM
+				BRA 		OROLONGIMM
+                
+OROBYTEIMM		CLR.L       D1
+                CLR.W       D6
+                MOVE.W      (A2)+,D6            ;grab the byte of the next word.
+                MOVE.B      D6,D1
+                TRAP        #15                 ;have now printed "OR.x  #xx"
+				BRA 		OROREG
+                
+OROWORDIMM		CLR.L       D1
+                CLR.W       D6
+                MOVE.W      (A2)+,D6            ;grab the next word.
+                MOVE.W      D6,D1
+                TRAP        #15                 ;have now printed "OR.x  #xxxx"
+				BRA 		OROREG
+                
+OROLONGIMM	    CLR.L       D1
+                CLR.L       D6
+                MOVE.L      (A2)+,D6            ;grab the long of the next word.
+                MOVE.L      D6,D1
+                TRAP        #15                 ;have now printed "OR.x  #xxxxxxxx"
+				BRA 		OROREG
+
+
+********************************************************************************* END OF OR DISSASSEMBLY ***************************************************************************
+
+
+
+
+
+
+
+
+
+********************************************************************************* START OF ORI DISSASSEMBLY ***************************************************************************
+
+
+ORICASE			MOVEM       D5,-(SP)        ;save D5 incase you change it at some point
+                *ORI's 3rd nybble (byte's first nybble) has to be B or lower
+                CLR.W       D6
+                MOVE.B      D5,D6
+                ANDI.B      #$F0,D6
+                CMPI.B      	#$C0,D6
+                BCC         DATACASE        ;if it's C or higher, it's data
+                LEA         ORIMESSAGE,A1
+                MOVE.L      #14,D0
+                TRAP        #15             ;have now printed "ORI"
+                *now let's check the size, which will impact what you print next in addition to the qualifier
+                *first two bits of the byte's first nybble determine size
+                ANDI.B      #$C0,D6         ;D6 still has the full first nybble stored, so just clear out the last two bits of the first nybble
+                LSR         #6,D6           ;move those first two bits to the end
+                CMPI.B      #0,D6
+                BEQ         ORIBYTE        ; if it ==0, it's a byte 
+                CMPI.B      #1,D6
+                BEQ         ORIWORD        ;if it == 1, it's a word
+ORILONG        	LEA         LONGEND,A1      ;else it's a long
+                TRAP        #15             ;Have now printed "ORI.L  "
+                LEA         POUNDSIGN,A1    
+                TRAP        #15             ;have now printed "ORI.L  #"
+                MOVE.L      #15,D0              ;load trap task 15 for later
+                MOVE.B      #10,D2              ;make sure it prints in decimal
+                CLR.L       D1
+                CLR.W       D6
+                MOVE.L      (A2)+,D6            ;grab the next long.
+                MOVE.L      D6,D1
+                TRAP        #15                 ;have now printed "ORI.L  #xxxxxxxx"
+                BRA         ORIEA
+                
+
+ORIWORD        	LEA         WORDEND,A1      ;else it's a long
+                TRAP        #15             ;Have now printed "ORI.W  "
+                LEA         POUNDSIGN,A1    
+                TRAP        #15             ;have now printed "ORI.W  #"
+                MOVE.L      #15,D0              ;load trap task 15 for later
+                MOVE.B      #10,D2              ;make sure it prints in decimal
+                CLR.L       D1
+                CLR.W       D6
+                MOVE.W      (A2)+,D6            ;grab the next word.
+                MOVE.W      D6,D1
+                TRAP        #15                 ;have now printed "ORI.W  #xxxx"
+                BRA         ORIEA
+
+ORIBYTE        	LEA         BYTEEND,A1      ;else it's a long
+                TRAP        #15             ;Have now printed "ORI.B  "
+                LEA         POUNDSIGN,A1    
+                TRAP        #15             ;have now printed "ORI.B  #"
+                MOVE.L      #15,D0              ;load trap task 15 for later
+                MOVE.B      #10,D2              ;make sure it prints in decimal
+                CLR.L       D1
+                CLR.W       D6
+                MOVE.W      (A2)+,D6            ;grab the byte from the next word.
+                MOVE.B      D6,D1
+                TRAP        #15                 ;have now printed "ORI.L  #xx"
+                BRA         ORIEA
+                
+ORIEA          	LEA         COMMASPACE,A1
+                MOVE.L      #14,D0
+                TRAP        #15             ;have now printed "ORI.x  #x, "
+                *next is to figure out which type of EA it is and print that out
+                *the last 2 bits of the byte's first nybble help determine the mode
+                CLR.B       D6
+                MOVE.B      D5,D6
+                ANDI.B      #$30,D6
+                CMPI.B      #0,D6           ;if == 0, it's a data reg
+                BEQ         ORIDN
+                CMPI.B      #$10,D6         ;if == 0001 0000, it's (An) or (An)+
+                BEQ         ORIINCORAN
+                CMPI.B      #$20,D6         ;if it's == 0010 0000, it's -(An)
+				BEQ 		ORIDEC
+                BRA         ORIABS         ;else it's an absolute
+                
+ORIDN          	LEA         DATAREG,A1
+                TRAP        #15             ;have now printed "ORI.x  #x, D"
+                CLR.B       D6
+                MOVE.B      D5,D6           ;last 3 bits of the byte determine the reg
+                ANDI.B      #07,D6
+                MOVE.L      #3,D0           ;load trap task 3
+                CLR.L       D1
+                MOVE.B      D6,D1
+                TRAP        #15             ;have now printed "ORI.x  #x, Dn"
+                
+                MOVEM       (SP)+,D5        ;reload the stack
+                BRA         LOOPEND         ;go to next instruction        
+                
+ORIINCORAN     	CLR.B       D6              ;determine which [(An) or (An)+] it is based on the first bit of the last nybble
+                MOVE.B      D5,D6
+                ANDI.B      #$08,D6
+                CMPI.B      #8,D6
+                BEQ         ORIINC         ;if its == 0000 1000, it's (An)+
+ORIAN          	LEA         INDIRECTADAB,A1 ;otherwise it's (An), so start printing out stuff
+                TRAP        #15             ;have now printed "ORI.x  #x, (A"
+                CLR.B       D6
+                MOVE.B      D5,D6           ;last 3 bits of the byte determine the reg
+                ANDI.B      #07,D6
+                MOVE.L      #3,D0           ;load trap task 3
+                CLR.L       D1
+                MOVE.B      D6,D1
+                TRAP        #15             ;have now printed "ORI.x  #x, (An"
+                MOVE.L      #14,D0
+                LEA         CLOSEPAREN,A1
+                TRAP        #15             ;have now printed "ORI.x  #x, (An)"
+                
+                MOVEM       (SP)+,D5        ;reload the stack
+                BRA         LOOPEND         ;go to next instruction 
+
+ORIINC         	LEA         INDIRECTADAB,A1
+                TRAP        #15             ;have now printed "ORI.x  #x, (A"
+                CLR.B       D6
+                MOVE.B      D5,D6           ;last 3 bits of the byte determine the reg
+                ANDI.B      #07,D6
+                MOVE.L      #3,D0           ;load trap task 3
+                CLR.L       D1
+                MOVE.B      D6,D1
+                TRAP        #15             ;have now printed "ORI.x  #x, (An"
+                MOVE.L      #14,D0
+                LEA         INCREMENTEND,A1
+                TRAP        #15             ;have now printed "ORI.x  #x, (An)+"
+                
+                MOVEM       (SP)+,D5        ;reload the stack
+                BRA         LOOPEND         ;go to next instruction 
+
+ORIDEC         	LEA         INDIRECTADDECB,A1 
+                TRAP        #15             ;have now printed "ORI.x  #x, (-A"
+                CLR.B       D6
+                MOVE.B      D5,D6           ;last 3 bits of the byte determine the reg
+                ANDI.B      #07,D6
+                MOVE.L      #3,D0           ;load trap task 3
+                CLR.L       D1
+                MOVE.B      D6,D1
+                TRAP        #15             ;have now printed "ORI.x  #x, -(An"
+                MOVE.L      #14,D0
+                LEA         CLOSEPAREN,A1
+                TRAP        #15             ;have now printed "ORI.x  #x, -(An)"
+                
+                MOVEM       (SP)+,D5        ;reload the stack
+                BRA         LOOPEND         ;go to next instruction 
+                
+ORIABS         	CLR.B       D6
+                MOVE.B      D5,D6           ;determine if it's (xxx).W or (xxx).L based on the last 3 bits
+                ANDI.B      #07,D6
+                MOVE.L      #14,D0
+                LEA 		DOLLARSIGN,A1
+				TRAP 		#15 			;have now printed "ORI.x  #x, $"
+                MOVE.B 		#16,D2 			;allows for trap task #15 to display hex numbers
+				MOVE.L 		#15,D0			;load trap task 15 for later
+                CLR.L       D1              ;clear D1 for later too
+                CMPI.B      #0,D6
+                BEQ         ORIABSWORD     ;if the last 3 bits are 0, it's (xxx).W
+                *else it's (xxx).L
+				MOVEM       (SP)+,D5        ;reload the stack since you're about to alter D5's location anyway
+				MOVE.L      (A2)+,D1		;move the whole long into D1
+				TRAP 		#15				;have now printed "ORI.x  #x, $xxxxxxxx"
+                
+                BRA         LOOPEND         ;go to the next instruction
+                
+ORIABSWORD     	MOVEM       (SP)+,D5        ;reload the stack since you're about to alter D5's location anyway
+				MOVE.W      (A2)+,D1		;move the next word into D1
+				TRAP 		#15				;have now printed "ORI.x  #x, $xxxx"
+                
+                BRA         LOOPEND         ;go to the next instruction
+
+
+********************************************************************************* END OF ORI DISSASSEMBLY ***************************************************************************
+
+
+
+
+
+
+
+
 *Stop program
 ENDCASE         SIMHALT             ; halt simulator
 
 
 *currently tests: NOP, NEG, JSR, RTS, ASL, ASR, LSL, LSR
-TESTCODE        *tests for JSR below
-                JSR         (A1)        ;*****************************NEED TO FIX THIS***********************
-                JSR         $FFFFFFFF  ;maybe?
-                JSR         $FFFF
-                JSR         ENDCASE     ;honestly not sure which mode this tests. (xxx).L?
-
-                *still need more JSR tests?
+TESTCODE       
+				*tests for ORI below
+				ORI.B 	#0, D0
+				ORI.W 	#1000, (A0)
+				ORI.L 	#10000000,-(A1)
+				ORI.B 	#100, (A2)+
+				*ORI.W 	#1000, $FFFF
+				*ORI.L 	#10000000, $FFFFFFFF
+				
+				*tests for OR below*
+					*OR.x ea, Dn first
+				OR.B 	#10,D7
+				OR.B 	D0,D1
+				OR.W 	(A0),D2
+				OR.L 	-(A1),D3
+				OR.B 	(A2)+,D4
+				*OR.W 	$FFFF,D5
+				*OR.L 	$FFFFFFFF,D6
+					*now OR.x Dn, ea
+				OR.B 	D0,(A3)
+				OR.W 	D1,-(A4)
+				OR.L 	D2,(A5)+
+				*OR.W 	D3, $FFFF
+				*OR.L 	D4, $FFFFFFFF
+				
+				
+				*tests for NEG below
+                NEG.B       D0      
+                NEG.W       D1
+                NEG.L       D3
+                NEG.B       (A0)
+                NEG.W       (A1)
+                NEG.L       (A2)
+                NEG.B       (A3)+
+                NEG.W       (A4)+
+                NEG.L       (A5)+
+                NEG.B       -(A6)
+                NEG.W       -(A7)
+                NEG.L       -(A0)
+                NEG.W       $FFFFFFFF
+                NEG.L       $FFFFFFFF
+				
+				*Tests for CMPI*
+				CMPI.B 		#0,D0
+				CMPI.W 		#1000,(A0)
+				CMPI.L 		#10000,(A1)+
+				CMPI.L 		#100000,-(A2)
+				*CMPI.L 	#1000000,$FFFFFFFF
+				*CMPI.L		#10000000,$FFFFFFFF
+                
                 *Test for ASL, ASR, LSL, LSR
                 ASL.B       #1,D0           ;reg shift
                 ASL.W       D1,D2           ;reg shift
@@ -2168,21 +3406,7 @@ TESTCODE        *tests for JSR below
                 LSR         -(A3)           ;mem shift
                 *test for NOP below
                 NOP
-                *tests for NEG below
-                NEG.B       D0      
-                NEG.W       D1
-                NEG.L       D3
-                NEG.B       (A0)
-                NEG.W       (A1)
-                NEG.L       (A2)
-                NEG.B       (A3)+
-                NEG.W       (A4)+
-                NEG.L       (A5)+
-                NEG.B       -(A6)
-                NEG.W       -(A7)
-                NEG.L       -(A0)
-                NEG.W       $FFFFFFFF
-                NEG.L       $FFFFFFFF
+                
                 *test for RTS
                 RTS
                 
@@ -2197,6 +3421,15 @@ RTSCODE         EQU         $4E75       ;Hex version of RTS
 JSRSTARTBYTE    EQU         $4E         ;next two digits are 10+ EA Mode first 2 digits, final four are EA Mode final digit(1) and EA register (3)
 NEGSTARTBYTE    EQU         $44         ;starting byte of NEG - next two bits are size, next 3 are EA mode, last 3 are EA reg
 ALSRLSTARTNYBLE EQU         $E          ;starting nybble for ASL/ASR/LSL/LSR. next nybble determines reg/mem shift
+BRASTARTBYTE    EQU         $60         ;starting byte for BRA
+BCSSTARTBYTE    EQU         $65         ;starting byte for BCS
+BGESTARTBYTE    EQU         $6C         ;starting byte for BGE
+BLTSTARTBYTE    EQU         $6D         ;starting byte for BLT
+BVCSTARTBYTE    EQU         $68         ;starting byte for BVC
+CMPEORNYBBLE    EQU         $B          ;starting nybble for CMP and EOR.  Second nybble will be odd for EOR, even for CMP
+CMPISTARTBYTE   EQU         $0C         ;starting byte for CMPI
+ORSTARTNYBBLE   EQU         $8          ;starting nybble for OR
+ORISTARTBYTE    EQU         $00         ;starting byte for ORI
 
 NOMORECODE      EQU         $FFFF   ;if A1 = this, then you've hit the end. I think
 
@@ -2212,6 +3445,17 @@ ASRMESSAGE      DC.L        'ASR',0
 ASLMESSAGE      DC.L        'ASL',0
 LSRMESSAGE      DC.L        'LSR',0
 LSLMESSAGE      DC.L        'LSL',0
+BRAMESSAGE      DC.L        'BRA',0
+BCSMESSAGE      DC.L        'BCS',0
+BGEMESSAGE      DC.L        'BGE',0
+BLTMESSAGE      DC.L        'BLT',0
+BVCMESSAGE      DC.L        'BVC',0
+CMPMESSAGE      DC.L        'CMP',0
+CMPIMESSAGE     DC.L        'CMPI',0
+EORMESSAGE      DC.L        'EOR',0
+ORMESSAGE       DC.L        'OR',0
+ORIMESSAGE      DC.L        'ORI',0
+
 
 ADDRESSA        DC.L        'A',0           ;for printing ADDRESS (A) registers
 INDIRECTADAB    DC.L        '(A',0          ;Beginning of the Indirect ADdress - used for start of increment as well
@@ -2234,6 +3478,12 @@ NEWLINE         DC.L        '',CR           ;for making a newline
 DOUBLESPACE     DC.L        '  ',0          ;needed to make a double space in some circumstances 
 
                 END         START        ; last line of source
+
+
+
+
+
+
 
 
 

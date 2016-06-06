@@ -1,0 +1,41 @@
+*tests for JSR below
+                JSR         (A1)        ;ERROR prints A48
+                JSR         $FFFFFFFF  ; ERROR only prints 
+                JSR         $FFFF
+                JSR         ENDCASE     ;honestly not sure which mode this tests. (xxx).L?
+
+                *still need more JSR tests?
+                
+                *Tests for Branching*
+                BRA         ENDCASE
+                BCS         ENDCASE
+                BGE         ENDCASE
+                BLT         ENDCASE
+                BVC         ENDCASE
+                BRA         TESTCODE
+                BCS         TESTCODE
+                BGE         TESTCODE
+                BLT         TESTCODE
+                BVC         TESTCODE
+                *Not sure what the best way to test for different disp is...
+				
+				*tests for EOR*
+				EOR.W 		D0,$FFFFFFFF
+				EOR.L 		D1,$FFFFFFFF    ;ERROR prints $FFFF only
+                EOR.B		D2,D3 
+				EOR.B		D4,(A0)         
+				EOR.W		D5,-(A1)        
+				EOR.L		D6,(A2)+ 
+				
+				 
+				
+				
+				*tests for CMP*
+				CMP.B 		#1,D0           ;ERROR prints EOR.W D1, $FFFF
+				*CMP.W 		$FFFF,D1        ;ERROR prints EOR.L D2, $FFFF
+				*CMP.L 		$FFFFFFFF,D2    ;ERROR prints $b859
+				CMP.B 		-(A0),D3        ;ERROR prints EOR.L D5, (a2)+
+				CMP.W 		(A1)+,D4        ;ERROR prints CMP.L A3, D6
+				CMP.L 		(A2),D5
+				CMP.L 		A3,D6
+				CMP.L 		D7,D0

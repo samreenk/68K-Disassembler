@@ -727,8 +727,8 @@ Absolute Data Addressing
 		10 — Long operation 
 	Effective Address ﬁeld—Speciﬁes the destination operand
 	
-	EA			Mode	Register
-	Dn			000		reg. number:Dn						
+	EA				Mode	Register
+	Dn				000		reg. number:Dn						
 	(An) 			010		reg. number: An
 	(An)+ 			011		reg. number: An
 	-(An) 			100		reg. number: An
