@@ -22,7 +22,10 @@ START:          ORG         $1000      ; first instruction of program
                 LEA         TESTCODE,A2         ; load address of the testcode
                 
 *start the actual disassembly below
-LOOPSTART       CLR.L       D5              ;clear out D5 in prep for the next instruction's load
+LOOPSTART       ADDI.B 		#1,D7
+				CMPI.B 		#31,D7
+				BEQ 		WAITFORINPUT
+				CLR.L       D5              ;clear out D5 in prep for the next instruction's load
                 MOVE.W      (A2)+,D5    ;move the current code into D5, then increment - this cant probably be changed so you just read (A1) and increment later.. but that's a case for optimizing
 
 *Compare the testinput wth the NOP code
@@ -165,7 +168,7 @@ ORCMP			CLR.W 		D6
 ORICMP			CLR.W 		D6
 				MOVE.W 		#ORISTARTBYTE,D6
 				LSL 		#8,D6 				;move starting byte to front of word
-				CMPI.W 		#$00C0,D6
+				CMPI.W 		#$00C0,D5
 				BCC			DATACASE			;max ORI value is $00BF
 				BRA 		ORICASE				;min ORI value is $0000, so you don't really need to test.
 				
@@ -176,8 +179,24 @@ LOOPEND         LEA         NEWLINE,A1           ;load carriage return val
                 TRAP        #15             ;print out a new line so next instruction isn't on same line
                 BRA         LOOPSTART       ;go back into the loop and check the next instruction value
                
-
-
+				*this is used to display only 30 lines at a time, then it waits for the user to enter something before doing the next lines
+WAITFORINPUT	LEA 		NEEDINPUT,A1
+				MOVE.L 		#13,D0
+				TRAP 		#15 		;display the message about needing input
+				CLR.B 		D1 			;prep for trap task 7
+				MOVE.L 		#7,D0
+				TRAP 		#15 		;set up the task to wait for user input. D1.B should now equal 0.
+TRAPAGAIN		MOVE.L 		#5,D0
+				TRAP 		#15 		;the program is now set to check for user input
+				CMPI.B 		#0,D1
+				BEQ 		TRAPAGAIN 	;if there's no input, repeat till input
+				MOVE.L 		#13,D0
+				LEA 		NEWLINE,A1
+				TRAP 		#15			;set it up so a new line seperates the input from the new dissassembled stuff
+				CLR.B 		D1			;otherwise there was input, so you're good
+				CLR.B 		D7			;clear out D7 so it can loop through again
+				BRA 		LOOPSTART	;and we begin once more
+				
 
 
 
@@ -204,11 +223,11 @@ NOPCASE         LEA         NOPMESSAGE,A1       ;if the word matches NOP, displa
 **********************************************************************************************************************START OF DATA INSTRUCTION DISSASSEMBLY********************************************************************
 
 *matched Data
-DATACASE        MOVEM       D5,-(SP)         ;save the register values
-                LEA         DATAMESSAGE,A1      ;if the word matches anything else, display data
-                MOVE.B      #14,D0
-                TRAP        #15
-                MOVEM       (SP)+,D5            ;reload the register values    
+DATACASE        CLR.L 		D1
+                MOVE.W 		(A2)+,D1
+                MOVE.L      #15,D0
+				MOVE.L 		#16,D2	
+                TRAP        #15  
                 BRA         LOOPEND       ;Go do the next instruction now
 
 
@@ -268,15 +287,24 @@ JSRXXXW         MOVE.L      #14,D0
                 TRAP        #15     ;first print the "JSR  "          
                 LEA         DOLLARSIGN,A1
                 TRAP        #15             ;have now printed "JSR  $"
-                MOVEM       (SP)+,D5        ;reload register values since you're altering D5 value next
-                MOVE.L      (A2)+,D5        ;grab the next word of data from the input
-                MOVE.L      #16,D2          ;set up your D2 for outputting hex
+                MOVEM       (SP)+,D5        ;reload the stack since you're about to alter D5's location anyway
+				CLR.L 		D3
+				MOVE.L      #16,D2          ;set up your D2 for outputting hex
                 MOVE.L      #15,D0          ;load trap task 15
+				MOVE.W      (A2)+,D3		;move the next word into D3
+				CMP.W 		#$8000,D3		;check if you need to sign extend
+				BCC 		JSRADDF
                 CLR.L       D1              ;clear D1
-                MOVE.W      D5,D1           ;move the data from D5 to D1
-                TRAP        #15             ;have now printed out "JSR  $XXXX" where XXXX is a word of data in hex
+                MOVE.L      D3,D1           ;move the data from D3 to D1
+
+JSRABSWTRAP		TRAP 		#15				;have now printed "JSR $xxxx"
                 
-                BRA         LOOPEND                
+                BRA         LOOPEND         ;go to the next instruction
+				
+JSRADDF 		MOVE.L 		#$FFFFFFFF,D1 	;set the sign extension up
+				MOVE.W 		D3,D1 			;move the rest of the word, then onto the print task
+				BRA 		JSRABSWTRAP
+               
  
 
                *JSR (xxx).L case
@@ -419,123 +447,68 @@ NEGDECREGLONG   CMPI.W      #$44A7,D5       ; a NEG.L will be between 44A0-44A7
                 BRA         LOOPEND      ;onto the next instruction
                 
                 
-                *not sure if it's (XXX).W quite yet
-NEGXXX          CMPI.W      #$4438,D5 ;B,8F  If it's 4438 or 443F, it's a NEG.B (xxx).W or .L
-                BEQ         NEGXXXBW
-                CMPI.W      #$443F,D5
-                BEQ         NEGXXXBL
-                CMPI.W      #$4478,D5        ;if it's 4478 or 447F, it's NEG.W (xxx).W or .L
-                BEQ         NEGXXXWW
-                CMPI.W      #$447F,D5
-                BEQ         NEGXXXWL
-                CMPI.W      #$44B8,D5       ;if it's 44B8 or 44BF, it's NEG.L (xxx).W or .L
-                BEQ         NEGXXXLW
-                CMPI.W      #$44BF,D5
-                BEQ         NEGXXXLL
-                BRA         NEGADDREG       ;if it's not these, move onto final test cases (An) and (An)+
-        
-        *For the below NEGXXXzz, it has been confirmed to be that particular instruction
-*NEG.B $XXXX        
-NEGXXXBW        MOVE.L      #14,D0      ;the NEG is still loaded, so print it now
-                TRAP        #15         ;have now printed "NEG"
-                LEA         BYTEEND,A1  ;load the .B
-                TRAP        #15             ;have now printed "NEG.B  "
-                LEA         DOLLARSIGN,A1
-                TRAP        #15             ;have now printed "NEG.B  $"
-                *now you need to print out the word which is the address value. so you need to take the next Word of data and print it out
-                MOVEM       (SP)+,D5        ;reload the stack since you're changing D5 system-wide next
-                MOVE.W      (A2)+,D5        ;you're grabbing the next Word of data into D5 now
-                MOVE.B      #16,D2          ;move 16 into D2.B so that you can display data in Base 16
-                MOVE.L      D5,D1           ;move the current value of data into D1
-                MOVE.L      #15,D0          ;load trap task 15
-                TRAP        #15             ;have now printed "NEG.B  $XXXX" where XXXX is a word of data representing a absolute address
+                *not sure if it's (XXX).W quite yet - could be NEGADDREG which is (An) or (An)+
+				*so i'm gonna check and branch to that code first
+NEGXXX          MOVE.B 		D5,D4			;idc about anything except the byte's first nybble's last 2 bits
+				ANDI.B 		#$30,D4			;so i isolate them
+				CMPI.B 		#$10,D4			;if you're left with 0010 0000 after that, it's (An) or (An)+
+				BEQ 		NEGADDREG
+				;else it's either data or abs address
+				CMPI.B 		#$0,D4
+				BEQ 		NEGADDREG		;this also checks for data regs - thanks past me
+				MOVE.B 		D5,D4 			;now it's def a abs address, so lets isolate the register to see which one, after we see the size
+				MOVE.L 		#14,D0			;in neither of these cases have we printed "NEG" yet, but it's loaded into A1 still
+				TRAP 		#15 			;now we've printed "NEG"
+				
+				ANDI.B 		#$C0,D4			;alright lets check for size now
+				CMPI.B		#0,D4 			;if 0 it's a byte op
+				BEQ 		NEGXXXBYTE
+				CMPI.B 		#$40,D4
+				BEQ 		NEGXXXWORD		; 0100 0000 = .W
+NEGXXXLONG		LEA 		LONGEND,A1 	;else it's a long
+				TRAP 		#15			;have printed "NEG.L  "
+				BRA 		NEGXXXREGCHK
+NEGXXXBYTE		LEA 		BYTEEND,A1
+				TRAP 		#15 			;have printed "NEG.B  "
+				BRA 		NEGXXXREGCHK
+NEGXXXWORD		LEA 		WORDEND,A1
+				TRAP		#15				;have printed "NEG.W  "
+				
+NEGXXXREGCHK	LEA 		DOLLARSIGN,A1 	;lets print the dollar now
+				TRAP		#15 			;now printed "NEG.x  $"
+				MOVE.L 		#16,D2 			;For trap task #15
+				MOVE.L 		#15,D0			;preload this for later
+				MOVE.B 		D5,D4
+				ANDI.B 		#$07,D4 		;only care about last 3 bits
+				CMPI.B 		#0,D4			;if result is 0, its (xxx).W
+				BEQ 		NEGXXXW
+				*else it's a xxx.L
+NEGXXXL			MOVEM       (SP)+,D5        ;reload the stack since you're about to alter D5's location anyway
+				MOVE.L      (A2)+,D1		;move the whole long into D1
+				TRAP 		#15				;printed "NEG.x  $xxxxxxx"
 
-                BRA         LOOPEND         ;move onto the next instruction 
+				BRA 		LOOPEND
+				
+NEGXXXW			MOVEM       (SP)+,D5        ;reload the stack since you're about to alter D5's location anyway
+				CLR.L 		D3
+				MOVE.W      (A2)+,D3		;move the next word into D1
+				CMP.W 		#$8000,D3		;check if you need to sign extend
+				BCC 		NEGADDF
+				CLR.L 		D1
+				MOVE.W 		D3, D1			;Move into D1 to print
+
+				
+
+NEGABSWTRAP		TRAP 		#15				;have now printed "NEG.x  $xxxx"
                 
-*NEG.B $XXXXXXXX                
-NEGXXXBL        MOVE.L      #14,D0      ;the NEG is still loaded, so print it now
-                TRAP        #15         ;have now printed "NEG"
-                LEA         BYTEEND,A1  ;load the .B
-                TRAP        #15             ;have now printed "NEG.B  "
-                LEA         DOLLARSIGN,A1
-                TRAP        #15             ;have now printed "NEG.B  $"
-                *now you need to print out the word which is the address value. so you need to take the next Word of data and print it out
-                MOVEM       (SP)+,D5        ;reload the stack since you're changing D5 system-wide next
-                MOVE.L      (A2)+,D5        ;you're grabbing the next Long of data into D5 now
-                MOVE.B      #16,D2          ;move 16 into D2.B so that you can display data in Base 16
-                MOVE.L      D5,D1           ;move the current value of data into D1
-                MOVE.L      #15,D0          ;load trap task 15
-                TRAP        #15             ;have now printed "NEG.B  $XXXXXXXX" where XXXXXXXX is a long of data representing a absolute address
-
-                BRA         LOOPEND         ;move onto the next instruction 
-                
-*NEG.W $XXXX                
-NEGXXXWW        MOVE.L      #14,D0      ;the NEG is still loaded, so print it now
-                TRAP        #15         ;have now printed "NEG"
-                LEA         WORDEND,A1  ;load the .W
-                TRAP        #15             ;have now printed "NEG.W  "
-                LEA         DOLLARSIGN,A1
-                TRAP        #15             ;have now printed "NEG.W  $"
-                *now you need to print out the word which is the address value. so you need to take the next Word of data and print it out
-                MOVEM       (SP)+,D5        ;reload the stack since you're changing D5 system-wide next
-                MOVE.W      (A2)+,D5        ;you're grabbing the next Word of data into D5 now
-                MOVE.B      #16,D2          ;move 16 into D2.B so that you can display data in Base 16
-                MOVE.L      D5,D1           ;move the current value of data into D1
-                MOVE.L      #15,D0          ;load trap task 15
-                TRAP        #15             ;have now printed "NEG.W  $XXXX" where XXXX is a word of data representing a absolute address
-
-                BRA         LOOPEND         ;move onto the next instruction 
-                
-*NEG.W $XXXXXXXX                
-NEGXXXWL        MOVE.L      #14,D0      ;the NEG is still loaded, so print it now
-                TRAP        #15         ;have now printed "NEG"
-                LEA         WORDEND,A1  ;load the .W
-                TRAP        #15             ;have now printed "NEG.W  "
-                LEA         DOLLARSIGN,A1
-                TRAP        #15             ;have now printed "NEG.W  $"
-                *now you need to print out the word which is the address value. so you need to take the next Word of data and print it out
-                MOVEM       (SP)+,D5        ;reload the stack since you're changing D5 system-wide next
-                MOVE.L      (A2)+,D5        ;you're grabbing the next long of data into D5 now
-                MOVE.B      #16,D2          ;move 16 into D2.B so that you can display data in Base 16
-                MOVE.L      D5,D1           ;move the current value of data into D1
-                MOVE.L      #15,D0          ;load trap task 15
-                TRAP        #15             ;have now printed "NEG.W  $XXXXXXXX" where XXXXXXXX is a long of data representing a absolute address
-
-                BRA         LOOPEND         ;move onto the next instruction
-                
-*NEG.L $XXXX                
-NEGXXXLW        MOVE.L      #14,D0      ;the NEG is still loaded, so print it now
-                TRAP        #15         ;have now printed "NEG"
-                LEA         LONGEND,A1  ;load the .L
-                TRAP        #15             ;have now printed "NEG.L  "
-                LEA         DOLLARSIGN,A1
-                TRAP        #15             ;have now printed "NEG.L  $"
-                *now you need to print out the word which is the address value. so you need to take the next Word of data and print it out
-                MOVEM       (SP)+,D5        ;reload the stack since you're changing D5 system-wide next
-                MOVE.W      (A2)+,D5        ;you're grabbing the next Word of data into D5 now
-                MOVE.B      #16,D2          ;move 16 into D2.B so that you can display data in Base 16
-                MOVE.L      D5,D1           ;move the current value of data into D1
-                MOVE.L      #15,D0          ;load trap task 15
-                TRAP        #15             ;have now printed "NEG.L  $XXXX" where XXXX is a word of data representing a absolute address
-
-                BRA         LOOPEND         ;move onto the next instruction
-
-*NEG.L $XXXXXXXX
-NEGXXXLL        MOVE.L      #14,D0      ;the NEG is still loaded, so print it now
-                TRAP        #15         ;have now printed "NEG"
-                LEA         LONGEND,A1  ;load the .L
-                TRAP        #15             ;have now printed "NEG.L  "
-                LEA         DOLLARSIGN,A1
-                TRAP        #15             ;have now printed "NEG.L  $"
-                *now you need to print out the word which is the address value. so you need to take the next Word of data and print it out
-                MOVEM       (SP)+,D5        ;reload the stack since you're changing D5 system-wide next
-                MOVE.L      (A2)+,D5        ;you're grabbing the next long of data into D5 now
-                MOVE.B      #16,D2          ;move 16 into D2.B so that you can display data in Base 16
-                MOVE.L      D5,D1           ;move the current value of data into D1
-                MOVE.L      #15,D0          ;load trap task 15
-                TRAP        #15             ;have now printed "NEG.L  $XXXXXXXX" where XXXXXXXX is a word of data representing a absolute address
-
-                BRA         LOOPEND         ;move onto the next instruction
+                BRA         LOOPEND         ;go to the next instruction
+				
+NEGADDF 		MOVE.L 		#$FFFFFFFF,D1 	;set the sign extension up
+				MOVE.W 		D3,D1 			;move the rest of the word, then onto the print task
+				BRA 		NEGABSWTRAP
+				
+				
+				
 
  *if prev (3rd) nybble was 1,5,9
                             *final nybble will be 0-7 for (An)
@@ -2240,7 +2213,7 @@ BRACASE         MOVEM		D5,-(SP) 		;save D5 value in case you need to alter it la
 				MOVE.W		-(A2),D3			;move A2 back - the data stored isn't important
 				CLR.L 		D3					;that's how unimportant it is
 				MOVE.L		A2,D3				;the address, however, is important, so we'll keep it in D3
-				MOVE.L		(A2)+,D6			;now put A2 back where it was
+				*MOVE.L		(A2)+,D6			;now put A2 back where it was
 				CLR.L       D0              ;clear out D0 for the trap task later
                 LEA         BRAMESSAGE,A1   ;load BRA message
                 MOVE.L      #14,D0
@@ -2253,30 +2226,180 @@ BRACASE         MOVEM		D5,-(SP) 		;save D5 value in case you need to alter it la
                 CLR.L       D6
                 MOVE.W      #$60FF,D6
                 CMP         D5,D6
-                BEQ         THIRTYTWOBITDISP    ;if it's equal to $60FF, then it's a 32-bit displacement
+                BEQ         THRTYTOBITDISP    ;if it's equal to $60FF, then it's a 32-bit displacement
                 CLR.W       D6
                 MOVE.W      #$6000,D6
                 CMP         D5,D6 
                 BEQ         SIXTEENBITDISP      ;if it's equal to $6000, then it's a 16-bit displacement
                 *if it's passed these tests, it's just an 8 bit displacement, so just print out the difference between the prev instruction loc
-				CLR.W		D6
+EIGHBITDISP		CLR.W		D6
 				MOVE.B		D5,D6				;store the displacement value into D6
-				ADD.L		D6,D3				;add the displacement from the instruction stored in D6 to the address value stored in D3 - note this is a signed addition?
+                CMPI.B      #$80,D6
+                BCC         ESUB
+                NEG.B       D6                  ;negate D6 cuz displacement is two's complement form
+				ADD.W		D6,D3				;add the displacement from the instruction stored in D6 to the address value stored in D3 - note this is a signed addition
+                
+ERETURN         ADDI.W      #2,D3
+                MOVE.L      #15,D0              ;also note since you want signed addition, and this is 8 bit (byte) disp, only add the byte values
+                MOVE.B      #16,D2              ;Not going to lie, unsure what happens if it overflows... or if it even can overflow
+                MOVE.L      D3,D1
+                TRAP        #15                 ;have now printed "Bcc  $xxxxxxxx"
+                
+                MOVE.L      (A2)+,D3            ;you don't need this, but you do need to push A2 forward again
+                MOVEM       (SP)+,D5            ;reload D5
+                BRA         LOOPEND             ;next instruction time
+                
+ESUB            NEG.B       D6
+                SUB.W       D6,D3
+                BRA         ERETURN
 				
-				
-				
+					
 
-BCSCASE
+BCSCASE         MOVEM		D5,-(SP) 		;save D5 value in case you need to alter it later
+				*grab the instruction's location by 'rolling back' A2
+				MOVE.W		-(A2),D3			;move A2 back - the data stored isn't important
+				CLR.L 		D3					;that's how unimportant it is
+				MOVE.L		A2,D3				;the address, however, is important, so we'll keep it in D3
+				*MOVE.L		(A2)+,D6			;now put A2 back where it was
+				CLR.L       D0              ;clear out D0 for the trap task later
+                LEA         BCSMESSAGE,A1   ;load BCS message
+                MOVE.L      #14,D0
+                TRAP        #15             ;have now printed "BCS"
+                LEA         DOUBLESPACE,A1  ;load the spacing
+                TRAP        #15             ;have now printed "BCS  "
+				LEA			DOLLARSIGN,A1
+				TRAP 		#15				;have now printed "BCS  $"
+                *now check to see if it's a 8 bit disp, 16 bit, or 32 bit
+                CLR.L       D6
+                MOVE.W      #$65FF,D6
+                CMP         D5,D6
+                BEQ         THRTYTOBITDISP    ;if it's equal to $65FF, then it's a 32-bit displacement
+                CLR.W       D6
+                MOVE.W      #$6500,D6
+                CMP         D5,D6 
+                BEQ         SIXTEENBITDISP      ;if it's equal to $6500, then it's a 16-bit displacement
+                BRA         EIGHBITDISP         ;otheriwse it's an 8 bit displacement
 
-BGECASE
+BGECASE         MOVEM		D5,-(SP) 		;save D5 value in case you need to alter it later
+				*grab the instruction's location by 'rolling back' A2
+				MOVE.W		-(A2),D3			;move A2 back - the data stored isn't important
+				CLR.L 		D3					;that's how unimportant it is
+				MOVE.L		A2,D3				;the address, however, is important, so we'll keep it in D3
+				*MOVE.L		(A2)+,D6			;now put A2 back where it was
+				CLR.L       D0              ;clear out D0 for the trap task later
+                LEA         BGEMESSAGE,A1   ;load BGE message
+                MOVE.L      #14,D0
+                TRAP        #15             ;have now printed "BGE"
+                LEA         DOUBLESPACE,A1  ;load the spacing
+                TRAP        #15             ;have now printed "BGE  "
+				LEA			DOLLARSIGN,A1
+				TRAP 		#15				;have now printed "BGE  $"
+                *now check to see if it's a 8 bit disp, 16 bit, or 32 bit
+                CLR.L       D6
+                MOVE.W      #$6CFF,D6
+                CMP         D5,D6
+                BEQ         THRTYTOBITDISP    ;if it's equal to $6CFF, then it's a 32-bit displacement
+                CLR.W       D6
+                MOVE.W      #$6C00,D6
+                CMP         D5,D6 
+                BEQ         SIXTEENBITDISP      ;if it's equal to $6C00, then it's a 16-bit displacement
+                BRA         EIGHBITDISP         ;otheriwse it's an 8 bit displacement
 
-BLTCASE
 
-BVCCASE
+BLTCASE         MOVEM		D5,-(SP) 		;save D5 value in case you need to alter it later
+				*grab the instruction's location by 'rolling back' A2
+				MOVE.W		-(A2),D3			;move A2 back - the data stored isn't important
+				CLR.L 		D3					;that's how unimportant it is
+				MOVE.L		A2,D3				;the address, however, is important, so we'll keep it in D3
+				*MOVE.L		(A2)+,D6			;now put A2 back where it was
+				CLR.L       D0              ;clear out D0 for the trap task later
+                LEA         BLTMESSAGE,A1   ;load BLT message
+                MOVE.L      #14,D0
+                TRAP        #15             ;have now printed "BLT"
+                LEA         DOUBLESPACE,A1  ;load the spacing
+                TRAP        #15             ;have now printed "BLT  "
+				LEA			DOLLARSIGN,A1
+				TRAP 		#15				;have now printed "BLT  $"
+                *now check to see if it's a 8 bit disp, 16 bit, or 32 bit
+                CLR.L       D6
+                MOVE.W      #$6DFF,D6
+                CMP         D5,D6
+                BEQ         THRTYTOBITDISP    ;if it's equal to $6DFF, then it's a 32-bit displacement
+                CLR.W       D6
+                MOVE.W      #$6D00,D6
+                CMP         D5,D6 
+                BEQ         SIXTEENBITDISP      ;if it's equal to $6D00, then it's a 16-bit displacement
+                BRA         EIGHBITDISP         ;otheriwse it's an 8 bit displacement
 
-SIXTEENBITDISP
 
-THIRTYTWOBITDISP    
+BVCCASE         MOVEM		D5,-(SP) 		;save D5 value in case you need to alter it later
+				*grab the instruction's location by 'rolling back' A2
+				MOVE.W		-(A2),D3			;move A2 back - the data stored isn't important
+				CLR.L 		D3					;that's how unimportant it is
+				MOVE.L		A2,D3				;the address, however, is important, so we'll keep it in D3
+				*MOVE.L		(A2)+,D6			;now put A2 back where it was
+				CLR.L       D0              ;clear out D0 for the trap task later
+                LEA         BVCMESSAGE,A1   ;load BVC message
+                MOVE.L      #14,D0
+                TRAP        #15             ;have now printed "BVC"
+                LEA         DOUBLESPACE,A1  ;load the spacing
+                TRAP        #15             ;have now printed "BVC  "
+				LEA			DOLLARSIGN,A1
+				TRAP 		#15				;have now printed "BVC  $"
+                *now check to see if it's a 8 bit disp, 16 bit, or 32 bit
+                CLR.L       D6
+                MOVE.W      #$68FF,D6
+                CMP         D5,D6
+                BEQ         THRTYTOBITDISP    ;if it's equal to $68FF, then it's a 32-bit displacement
+                CLR.W       D6
+                MOVE.W      #$6800,D6
+                CMP         D5,D6 
+                BEQ         SIXTEENBITDISP      ;if it's equal to $6800, then it's a 16-bit displacement
+                BRA         EIGHBITDISP         ;otheriwse it's an 8 bit displacement
+
+
+SIXTEENBITDISP  CLR.W       D6          ;16 bit displacement means the next word will have the displacement data
+                MOVE.L      (A2)+,D6    ;move the next word from the instruction set into d6
+                *if the first bit of the word is 1, it's negative, so check for that first before doing NEG
+                *if the first bit of the word IS 1, then instead of doing ADD after NEG, do SUB
+                CMPI.W      #$8000,D6
+                BCC         SSUB
+                NEG.W       D6          ;neg D6 cuz displacement is in two's complement form
+                ADD.W       D6,D3       ;add that displacement value to the original address location, stored in D3
+
+SRETURN         ADDI.W      #2,D3
+                MOVE.L      #15,D0      ;see EIGHBITDISP notes on the above addition
+                MOVE.B      #16,D2
+                MOVE.L      D3,D1
+                TRAP        #15                 ;have now printed "Bcc  $xxxxxxxx"
+                
+                MOVEM       (SP)+,D5            ;reload D5
+                BRA         LOOPEND             ;next instruction time
+                
+SSUB            NEG.W       D6
+                SUB.W       D6,D3
+                BRA         SRETURN
+                
+
+THRTYTOBITDISP  CLR.W       D6          ;32 bit displacement means the next long will have the displacement data
+                MOVE.L      (A2)+,D6    ;move the next long from the instruction set into d6
+                CMPI.L      #$80000000,D6
+                BCC         TSUB
+                NEG.L       D6          ;neg D6 cuz displacement is in two's complement form
+                ADD.L       D6,D3       ;add that displacement value to the original address location, stored in D3
+                
+TRETURN         ADDI.L      #2,D3
+                MOVE.L      #15,D0
+                MOVE.B      #16,D2
+                MOVE.L      D3,D1
+                TRAP        #15                 ;have now printed "Bcc  $xxxxxxxx"
+                
+                MOVEM       (SP)+,D5            ;reload D5
+                BRA         LOOPEND             ;next instruction time
+                
+TSUB            NEG.L       D6
+                SUB.L       D6,D3
+                BRA         TRETURN
 
 ********************************************************************************* END OF BRA/BCS/BGE/BLT/BVC DISSASSEMBLY ***************************************************************************
 
@@ -2454,11 +2577,24 @@ CMPABSWORD      MOVE.L      #14,D0
 				TRAP 		#15 			;have now printed "CMP.x  $"
 				MOVE.B 		#16,D2 			;allows for trap task #15 to display hex numbers
 				MOVE.L 		#15,D0			;load trap task 15 for later
+				
                 MOVEM       (SP)+,D5        ;reload the stack since you're about to alter D5's location anyway
-                CLR.L       D1
-				MOVE.W      (A2)+,D1		;move the next word into D1
-				TRAP 		#15				;have now printed "EOR.x  $xxxx"
+				CLR.L 		D3
+				MOVE.W      (A2)+,D3		;move the next word into D3
+				CMP.W 		#$8000,D3		;check if you need to sign extend
+				BCC 		CMPADDF
+				CLR.L 		D1
+				MOVE.W 		D3, D1			;Move into D1 to print
+
+				
+
+CMPABSWTRAP		TRAP 		#15				;have now printed "CMP.x  $xxxx"
 				BRA 		CMPREG
+				
+CMPADDF 		MOVE.L 		#$FFFFFFFF,D1 	;set the sign extension up
+				MOVE.W 		D3,D1 			;move the rest of the word, then onto the print task
+				BRA 		CMPABSWTRAP
+
                 
 CMPABSLONG      MOVE.L      #14,D0     
                 LEA 		DOLLARSIGN,A1
@@ -2467,7 +2603,7 @@ CMPABSLONG      MOVE.L      #14,D0
 				MOVE.L 		#15,D0			;load trap task 15 for later
                 MOVEM       (SP)+,D5        ;reload the stack since you're about to alter D5's location anyway
 				MOVE.L      (A2)+,D1		;move the whole long into D1
-				TRAP 		#15				;have now printed "EOR.x  Dn, $xxxxxxxx"		
+				TRAP 		#15				;have now printed "CMP.x  Dn, $xxxxxxxx"		
 				BRA 		CMPREG
                 
 CMPREG			MOVE.L      #14,D0
@@ -2641,11 +2777,22 @@ EORABS			CLR.B 		D6 				;check what the last 3 bits equal to determine what to p
 				BRA 		LOOPEND			;go to next instruction
 				
 EORABSWORD		MOVEM       (SP)+,D5        ;reload the stack since you're about to alter D5's location anyway
-				CLR.L 		D1				;clear out D1
-				MOVE.W      (A2)+,D1		;move the word into D1
-				TRAP 		#15				;have now printed "EOR.x  Dn, $xxxx"
+				CLR.L 		D3
+				MOVE.W      (A2)+,D3		;move the next word into D3
+				CMP.W 		#$8000,D3		;check if you need to sign extend
+				BCC 		EORADDF
+				CLR.L 		D1
+				MOVE.W 		D3,D1 			;else just move into D1 to print
+
 				
-				BRA 		LOOPEND 		;onto the next instruction 
+
+EORABSWTRAP		TRAP 		#15				;have now printed "EOR.x  Dn, $xxxx"
+                
+                BRA         LOOPEND         ;go to the next instruction
+				
+EORADDF 		MOVE.L 		#$FFFFFFFF,D1 	;set the sign extension up
+				MOVE.W 		D3,D1 			;move the rest of the word, then onto the print task
+				BRA 		EORABSWTRAP
 				
 
 
@@ -2825,8 +2972,22 @@ CMPIABS         CLR.B       D6
                 BRA         LOOPEND         ;go to the next instruction
                 
 CMPIABSWORD     MOVEM       (SP)+,D5        ;reload the stack since you're about to alter D5's location anyway
-				MOVE.W      (A2)+,D1		;move the next word into D1
-				TRAP 		#15				;have now printed "CMPI.x  #x, $xxxx"
+				CLR.L 		D3
+				MOVE.W      (A2)+,D3		;move the next word into D1
+				CMP.W 		#$8000,D3		;check if you need to sign extend
+				BCC 		CMPIADDF
+				CLR.L 		D1
+				MOVE.W 		D3, D1			;Move into D1 to print
+
+				
+
+CMPIABSWTRAP	TRAP 		#15				;have now printed "CMPI.x  #x, $xxxx"
+                
+                BRA         LOOPEND         ;go to the next instruction
+				
+CMPIADDF 		MOVE.L 		#$FFFFFFFF,D1 	;set the sign extension up
+				MOVE.W 		D3,D1 			;move the rest of the word, then onto the print task
+				BRA 		CMPIABSWTRAP
                 
                 BRA         LOOPEND         ;go to the next instruction
 
@@ -2966,11 +3127,23 @@ ORABS			CLR.B 		D6 				;check what the last 3 bits equal to determine what to pr
 				BRA 		LOOPEND			;go to next instruction
 				
 ORABSWORD		MOVEM       (SP)+,D5        ;reload the stack since you're about to alter D5's location anyway
-				CLR.L 		D1				;clear out D1
-				MOVE.W      (A2)+,D1		;move the word into D1
-				TRAP 		#15				;have now printed "OR.x  Dn, $xxxx"
+				CLR.L 		D3
+				MOVE.W      (A2)+,D3		;move the next word into D1
+				CMP.W 		#$8000,D3		;check if you need to sign extend
+				BCC 		ORADDF
+				CLR.L 		D1
+				MOVE.W 		D3, D1			;Move into D1 to print
+
 				
-				BRA 		LOOPEND 		;onto the next instruction
+
+ORABSWTRAP		TRAP 		#15				;have now printed "OR.x  Dn, $xxxx"
+                
+                BRA         LOOPEND         ;go to the next instruction
+				
+ORADDF 			MOVE.L 		#$FFFFFFFF,D1 	;set the sign extension up
+				MOVE.W 		D3,D1 			;move the rest of the word, then onto the print task
+				BRA 		ORABSWTRAP
+
 
 				
 				
@@ -3091,11 +3264,23 @@ OROABSIMM		CLR.B 		D6 				;check what the last 3 bits equal to determine what to
 				BRA 		OROREG
 				
 OROABSWORD		MOVEM       (SP)+,D5        ;reload the stack since you're about to alter D5's location anyway
-				CLR.L 		D1				;clear out D1
-				MOVE.W      (A2)+,D1		;move the word into D1
-				TRAP 		#15				;have now printed "OR.x  Dn, $xxxx"
+				CLR.L 		D3
+				MOVE.W      (A2)+,D3		;move the next word into D1
+				CMP.W 		#$8000,D3		;check if you need to sign extend
+				BCC 		OROADDF
+				CLR.L 		D1
+				MOVE.W 		D3, D1			;Move into D1 to print
+
 				
-				BRA 		OROREG
+
+OROABSWTRAP		TRAP 		#15				;have now printed "OR.x  $xxxx"
+                
+                BRA         OROREG         ;go to the next instruction
+				
+OROADDF 		MOVE.L 		#$FFFFFFFF,D1 	;set the sign extension up
+				MOVE.W 		D3,D1 			;move the rest of the word, then onto the print task
+				BRA 		OROABSWTRAP
+
 
 				
 				
@@ -3289,7 +3474,7 @@ ORIDEC         	LEA         INDIRECTADDECB,A1
                 
 ORIABS         	CLR.B       D6
                 MOVE.B      D5,D6           ;determine if it's (xxx).W or (xxx).L based on the last 3 bits
-                ANDI.B      #07,D6
+                ANDI.B      #$07,D6
                 MOVE.L      #14,D0
                 LEA 		DOLLARSIGN,A1
 				TRAP 		#15 			;have now printed "ORI.x  #x, $"
@@ -3306,10 +3491,22 @@ ORIABS         	CLR.B       D6
                 BRA         LOOPEND         ;go to the next instruction
                 
 ORIABSWORD     	MOVEM       (SP)+,D5        ;reload the stack since you're about to alter D5's location anyway
-				MOVE.W      (A2)+,D1		;move the next word into D1
-				TRAP 		#15				;have now printed "ORI.x  #x, $xxxx"
+				CLR.L 		D3
+				MOVE.W      (A2)+,D3		;move the next word into D1
+				CMP.W 		#$8000,D3		;check if you need to sign extend
+				BCC 		ORIADDF
+				CLR.L 		D1
+				MOVE.W 		D3, D1			;Move into D1 to print
+
+				
+
+ORIABSWTRAP		TRAP 		#15				;have now printed "ORI.x  #x, $xxxx"
                 
                 BRA         LOOPEND         ;go to the next instruction
+				
+ORIADDF 		MOVE.L 		#$FFFFFFFF,D1 	;set the sign extension up
+				MOVE.W 		D3,D1 			;move the rest of the word, then onto the print task
+				BRA 		ORIABSWTRAP
 
 
 ********************************************************************************* END OF ORI DISSASSEMBLY ***************************************************************************
@@ -3326,36 +3523,26 @@ ENDCASE         SIMHALT             ; halt simulator
 
 
 *currently tests: NOP, NEG, JSR, RTS, ASL, ASR, LSL, LSR
-TESTCODE       
-				*tests for ORI below
-				ORI.B 	#0, D0
-				ORI.W 	#1000, (A0)
-				ORI.L 	#10000000,-(A1)
-				ORI.B 	#100, (A2)+
-				*ORI.W 	#1000, $FFFF
-				*ORI.L 	#10000000, $FFFFFFFF
+TESTCODE		*DATA TEST*
+				NEGX 		D0
+				NOT.B 		(A0)
+				MOVEM 		(SP)+,D5
 				
-				*tests for OR below*
-					*OR.x ea, Dn first
-				OR.B 	#10,D7
-				OR.B 	D0,D1
-				OR.W 	(A0),D2
-				OR.L 	-(A1),D3
-				OR.B 	(A2)+,D4
-				*OR.W 	$FFFF,D5
-				*OR.L 	$FFFFFFFF,D6
-					*now OR.x Dn, ea
-				OR.B 	D0,(A3)
-				OR.W 	D1,-(A4)
-				OR.L 	D2,(A5)+
-				*OR.W 	D3, $FFFF
-				*OR.L 	D4, $FFFFFFFF
-				
+				*tests for CMP*
+				CMP.B 		#1,D0    
+				CMP.W 		$FFFF.W,D1 
+				CMP.B 		$0123.W,D7
+				CMP.L 		$FFFFFFFF,D2
+				CMP.B 		-(A0),D3  
+				CMP.W 		(A1)+,D4
+				CMP.L 		(A2),D5
+				CMP.L 		A3,D6
+				CMP.L 		D7,D0
 				
 				*tests for NEG below
-                NEG.B       D0      
-                NEG.W       D1
-                NEG.L       D3
+                NEG.B       D0   	  
+                NEG.W       D1		
+                NEG.L       D3		
                 NEG.B       (A0)
                 NEG.W       (A1)
                 NEG.L       (A2)
@@ -3365,16 +3552,88 @@ TESTCODE
                 NEG.B       -(A6)
                 NEG.W       -(A7)
                 NEG.L       -(A0)
+                NEG.B       $ABCDEFFF
                 NEG.W       $FFFFFFFF
                 NEG.L       $FFFFFFFF
+                NEG.B       $FFFF.W
+                NEG.W       $ABCD.W
+                NEG.L       $1234.W			
+				
+				*tests for EOR*
+				EOR.W 		D0,$FFFFFFFF	
+				EOR.L 		D1,$FFFF.W		
+				EOR.B 		D7,$0123.W		
+                EOR.B		D2,D3 
+				EOR.B		D4,(A0)         
+				EOR.W		D5,-(A1)        
+				EOR.L		D6,(A2)+ 
+				
+				*tests for JSR below
+                JSR         (A1)
+                JSR         $FFFFFFFF
+                JSR         $FFFF.W
+				JSR 		$0123.W
+				
+                
+                *Tests for Branching*
+                *16 bit disp?
+                BRA         $00001000
+                BCS         $00001000
+                BGE         $00001000
+                BLT         $00001000
+                BVC         $00001000
+                *8 bit disp
+                BRA         $00002FF0
+                BCS         $00002FF0
+                BGE         $00002FF0
+                BLT         $00002FF0
+                BVC         $00002FF0
+                *32 bit idk how to test but it should be the same logic, so I think it works
+                BRA         $00000FFF
+                BCS         $00000FFF
+                BGE         $00000FFF
+                BLT         $00000FFF
+                BVC         $00000FFF
+                
+                *Not sure what the best way to test for different disp is...
+                
+				*tests for ORI below
+				ORI.B 	#0, D0
+				ORI.W 	#1000, (A0)
+				ORI.L 	#10000000,-(A1)
+				ORI.B 	#100, (A2)+
+				ORI.W 	#1000, $ABCD.W
+				ORI.L 	#10000000, $ABCDEFFF
+				ORI.B 	#2, $0123.W
+				
+				
+				*tests for OR below*
+					*OR.x ea, Dn first
+				OR.B 	#10,D7
+				OR.B 	D0,D1
+				OR.W 	(A0),D2
+				OR.L 	-(A1),D3
+				OR.B 	(A2)+,D4
+				OR.W 	$FFFF.W,D5
+				OR.L 	$FFFFFFFF,D6
+					*now OR.x Dn, ea
+				OR.B 	D0,(A3)
+				OR.W 	D1,-(A4)
+				OR.L 	D2,(A5)+
+				OR.W 	D3, $FFFF.W
+				OR.L 	D4, $FFFFFFFF
+				OR.B 	D5,$0123.W
+				
+				
 				
 				*Tests for CMPI*
 				CMPI.B 		#0,D0
 				CMPI.W 		#1000,(A0)
 				CMPI.L 		#10000,(A1)+
 				CMPI.L 		#100000,-(A2)
-				*CMPI.L 	#1000000,$FFFFFFFF
-				*CMPI.L		#10000000,$FFFFFFFF
+				CMPI.L 		#1000000,$FFFF.W
+				CMPI.B 		#2,$0123.W
+				CMPI.L		#10000000,$FFFFFFFF
                 
                 *Test for ASL, ASR, LSL, LSR
                 ASL.B       #1,D0           ;reg shift
@@ -3477,7 +3736,17 @@ CR              EQU         $0D             ;carriage return
 NEWLINE         DC.L        '',CR           ;for making a newline
 DOUBLESPACE     DC.L        '  ',0          ;needed to make a double space in some circumstances 
 
+NEEDINPUT		DC.L 		'Press any key to disassemble more code from the file',CR
+
                 END         START        ; last line of source
+
+
+
+
+
+
+
+
 
 
 
