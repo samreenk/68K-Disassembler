@@ -18,8 +18,33 @@ START:          ORG         $1000      ; first instruction of program
                 CLR.L       D6
                 CLR.L       D7
                 
+*Ask for the address to disassemble from
+
+STARTINGQ       LEA         WHERETOSTART,A1
+                MOVE.B      #13,D0
+                TRAP        #15
+                *MOVE.B      #13,D0
+                LEA         WHERETOSTARTPT,A1
+                TRAP        #15
+                MOVE.B      #4,D0
+                TRAP        #15
+                MOVE.B      D1,D2
+                ANDI.B      #$01,D2
+                CMPI.B      #0,D2
+                BEQ         STARTDONE
+REINPUT         LEA         NOTEVEN,A1
+                MOVE.B      #13,D0
+                TRAP        #15
+                BRA         STARTINGQ
+STARTDONE       CLR.L       D0
+                MOVE.L      D1,(A1)
+                LEA         (A1),A2
+                CLR.L       D1
+                
+                
+                
 *Get the location of the test code
-                LEA         TESTCODE,A2         ; load address of the testcode
+                *LEA         TESTCODE,A2         ; load address of the testcode
                 
 *start the actual disassembly below
 LOOPSTART       ADDI.B 		#1,D7
@@ -3737,8 +3762,13 @@ NEWLINE         DC.L        '',CR           ;for making a newline
 DOUBLESPACE     DC.L        '  ',0          ;needed to make a double space in some circumstances 
 
 NEEDINPUT		DC.L 		'Press any key to disassemble more code from the file',CR
+WHERETOSTART    DC.L        'Please enter the even address where you would like to start disassembling here.',CR
+WHERETOSTARTPT  DC.L        'Please note addresses are 8 digits - anything less will be led with 0s. $',0
+NOTEVEN         DC.L        'Please enter an even address',CR
+
 
                 END         START        ; last line of source
+
 
 
 
