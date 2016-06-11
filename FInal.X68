@@ -26,19 +26,60 @@ STARTINGQ       LEA         WHERETOSTART,A1
                 *MOVE.B      #13,D0
                 LEA         WHERETOSTARTPT,A1
                 TRAP        #15
-                MOVE.B      #4,D0
+                LEA         WHERETOSTARTPTO,A1
                 TRAP        #15
-                MOVE.B      D1,D2
+                LEA         WHERETOSTARTPTT,A1
+                TRAP        #15
+GETTHEINPUT     MOVE.B      #2,D0
+                TRAP        #15         ;string of input is now stored in (A1)
+                CLR.L       D1          ;make sure D1 stays empty
+                
+STRINGTONUMB    ADDI.B      #1,D4       ;break the cycle after D4 hits 8 
+                MOVE.B      (A1)+,D3    ;TRANSLATE a byte at a time from string to hex 
+                                        ;only check a nybble at a time though
+                CMPI.B      #$46,D3      ;upper bound for hex 
+                BHI         MAKEZERO        ;if higher, invalid inpt
+                CMPI.B      #$41,D3      ;lower bound for hex
+                BCC         HEXTRANSLATE
+                CMPI.B      #$40,D3      ;upper bound for decimal
+                BHI         MAKEZERO    ;if higher, invalid input - this shouldnt happen since checks for hex were earlier$
+                CMPI.B      #$30,D3      ;lower bound for decimal
+                BCC         DECIMALTRANS
+                BRA         MAKEZERO       ;invalid input, lowet han #30
+
+MAKEZERO        LSL.L       #4,D1
+                ADD.B       #0,D1           ;just put a 0 for invalid input
+                CMPI.B      #$8,D4
+                BEQ         CHECKEVEN
+                BRA         STRINGTONUMB
+
+DECIMALTRANS    SUBI.B      #$30,D3          ;get the actual dec val
+                LSL.L       #4,D1
+                ADD.B       D3,D1           ;move it to d1 which holds actual address
+                CMPI.B      #$8,D4
+                BEQ         CHECKEVEN       ;see if you've examined every byte yet, branch here if you have
+                BRA         STRINGTONUMB    
+
+HEXTRANSLATE    SUBI.B      #$37,D3          ;get the actual hex val
+                LSL.L       #4,D1
+                ADD.B       D3,D1
+                CMPI.B      #$8,D4
+                BEQ         CHECKEVEN
+                BRA         STRINGTONUMB         
+                
+CHECKEVEN       MOVE.B      D1,D2           ;TEST if even
                 ANDI.B      #$01,D2
+                CLR.B       D4              ;clear in case you need to re-do input gathering
                 CMPI.B      #0,D2
-                BEQ         STARTDONE
+                BEQ         STARTDONE       ;if it's 0, it's even
 REINPUT         LEA         NOTEVEN,A1
                 MOVE.B      #13,D0
                 TRAP        #15
                 BRA         STARTINGQ
-STARTDONE       CLR.L       D0
-                MOVE.L      D1,(A1)
-                LEA         (A1),A2
+STARTDONE       
+                CLR.L       D0
+                MOVEA.L      D1,A2
+                *LEA         (A1),A2
                 CLR.L       D1
                 
                 
@@ -56,8 +97,8 @@ LOOPSTART       ADDI.B 		#1,D7
 *Compare the testinput wth the NOP code
 *Need to change this to be a while there's still code... end of code should be 00000000 i think
 *   basically, while current != SIMHALT == $00000000?
-                CMPI.L      #NOMORECODE,D5      ;end of instructions, branch to program end
-                BEQ         ENDCASE
+                *CMPI.L      #NOMORECODE,D5      ;end of instructions, branch to program end
+                *BEQ         ENDCASE
                 
 NOPCMP          CMPI.W      #NOPCODE,D5          ; compare NOPCODE value to current instruction val
                 BEQ         NOPCASE
@@ -249,6 +290,9 @@ NOPCASE         LEA         NOPMESSAGE,A1       ;if the word matches NOP, displa
 
 *matched Data
 DATACASE        CLR.L 		D1
+                LEA         DOLLARSIGN,A1
+                MOVE.L      #14,D0
+                TRAP        #15
                 MOVE.W 		(A2)+,D1
                 MOVE.L      #15,D0
 				MOVE.L 		#16,D2	
@@ -3763,11 +3807,15 @@ DOUBLESPACE     DC.L        '  ',0          ;needed to make a double space in so
 
 NEEDINPUT		DC.L 		'Press any key to disassemble more code from the file',CR
 WHERETOSTART    DC.L        'Please enter the even address where you would like to start disassembling here.',CR
-WHERETOSTARTPT  DC.L        'Please note addresses are 8 digits - anything less will be led with 0s. $',0
+WHERETOSTARTPT  DC.L        'Please note addresses are 8 digits - anything less will be followed with 0s.',CR 
+WHERETOSTARTPTO DC.L       'If the address is over 8 digits, only the first eight digits will be counted.',CR
+WHERETOSTARTPTT DC.L        'Finally, non-valid digits will be replaced with 0 & only upper-case hex allowed. $',CR
 NOTEVEN         DC.L        'Please enter an even address',CR
 
 
                 END         START        ; last line of source
+
+
 
 
 
